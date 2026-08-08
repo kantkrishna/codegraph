@@ -1,0 +1,46 @@
+[project]
+name = "codegraph"
+version = "0.1.0"
+description = "Enterprise AI-Augmented Engineering Platform"
+readme = "README.md"
+authors = [
+    { name = "Krishna Kant", email = "kantkrishna@hotmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "neo4j>=6.2.0",
+    "pgvector>=0.5.0",
+    "psycopg2-binary>=2.9.12",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "uvicorn>=0.52.1",
+]
+
+[project.scripts]
+codegraph = "codegraph:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"] # PEP8, Pyflakes, isort, pyupgrade
+ignore = []
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
