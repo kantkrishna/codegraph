@@ -67,6 +67,18 @@ services:
       timeout: 5s
       retries: 5
     restart: always
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: codegraph-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC (Backend Exporter target)
+      - "4318:4318"   # OTLP HTTP
+    restart: unless-stopped
+
 volumes:
   neo4j_data:
     driver: local
