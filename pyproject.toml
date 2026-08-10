@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.141.1",
+    "httpx2>=2.10.0",
     "neo4j>=6.2.0",
     "pgvector>=0.5.0",
     "psycopg2-binary>=2.9.12",
@@ -49,3 +50,6 @@ disallow_untyped_defs = true
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

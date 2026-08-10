@@ -220,3 +220,5 @@ __marimo__/
 # Docker
 .docker-data/
 docker/
+
+.continue

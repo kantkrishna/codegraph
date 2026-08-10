@@ -1,0 +1,48 @@
+# .github/workflows/ci.yml
+
+# This file defines the CI pipeline for CodeGraph repository.
+
+name: CodeGraph CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  quality-and-build:
+    name: Code Quality & Docker Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv (with caching)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install Dependencies
+        run: uv sync --frozen
+
+      - name: Run Ruff (Linting)
+        run: uv run ruff check .
+
+      - name: Run Mypy (Type Checking)
+        run: uv run mypy .
+
+      - name: Run Pytest (Unit Tests)
+        run: uv run pytest
+
+      - name: Test Docker Build
+        run: docker-compose build web

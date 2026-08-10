@@ -33,6 +33,14 @@ lint:
 # Typechecking
 	uv run mypy .
 
+ruff-check-tb:
+# Linting with auto-fix enabled (Ruff stack traces)
+	uv run ruff check --fix --show-files .
+
+mypy-tb:
+# Typechecking (Mypy internal stack traces)
+	uv run mypy . --tb
+
 docker-up:
 	docker compose up -d
 

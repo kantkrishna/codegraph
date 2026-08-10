@@ -1,4 +1,4 @@
-# tests/unit/test_docker_compose.py
+# tests/unit/foundation/test_docker_compose.py
 
 # This test suite verifies the integrity and correctness of the docker-compose.yml
 # configuration for the CodeGraph project.
