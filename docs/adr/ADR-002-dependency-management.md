@@ -1,11 +1,5 @@
 # ADR-002: Dependency Management & Local Orchestration
 
-**Status:** Proposed
-
-**Date:** Current
-
-**Epic:** Epic 1 - Platform Foundation & Core API
-
 ### Context
 
 Enterprise AI platforms require complex local setups. Developers will need PostgreSQL (with pgvector), Neo4j (with APOC algorithms), and Python running simultaneously. Furthermore, Python dependency hell is a notorious productivity killer in AI engineering.

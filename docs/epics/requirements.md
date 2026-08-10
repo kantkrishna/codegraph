@@ -14,6 +14,10 @@
     * [US-1.3: Build Core FastAPI Application Shell](#us-13-build-core-fastapi-application-shell)
     * [US-1.4: Implement CI Pipeline Quality Gates](#us-14-implement-ci-pipeline-quality-gates)
   * [Epic 2: Core Observability & Telemetry](#epic-2-core-observability--telemetry)
+    * [US-2.1: Standardize Structured JSON Logging](#us-21-standardize-structured-json-logging)
+    * [US-2.2: Implement Distributed Tracing (OpenTelemetry)](#us-22-implement-distributed-tracing-opentelemetry)
+    * [US-2.3: Expose Application Metrics Endpoint](#us-23-expose-application-metrics-endpoint)
+    * [US-2.4: LLM & GraphRAG Telemetry Foundation](#us-24-llm--graphrag-telemetry-foundation)
   * [Epic 3: Event-Driven Ingestion Architecture](#epic-3-event-driven-ingestion-architecture)
 * [Phase 2: Structural Knowledge Extraction (The Deterministic Brain)](#phase-2-structural-knowledge-extraction-the-deterministic-brain)
   * [Epic 4: Repository Ingestion (ASTs & Dependencies)](#epic-4-repository-ingestion-asts--dependencies)
@@ -196,6 +200,201 @@ Instead of boiling the ocean and indexing an entire enterprise, our MVP will sim
 
 ## Epic 2: Core Observability & Telemetry
   * *Rationale:* Pulled from the end of the backlog. We must instrument structured logging, tracing (OpenTelemetry), and basic DB metrics *before* we start pushing gigabytes of code through pipelines.
+
+### US-2.1: Standardize Structured JSON Logging
+
+- **Description:** Replace standard Python logging with a structured JSON logger (e.g., `structlog` or `loguru`). Every log entry must include contextual metadata (`request_id`, `environment`, `service_name`) to allow enterprise log aggregators (Datadog, Splunk, ELK) to parse and index them efficiently.
+
+- **Acceptance Criteria:**
+
+- All FastAPI routes output logs in purely JSON format.
+
+- A unique `request_id` is injected into every incoming HTTP request via middleware.
+
+- The `request_id` is automatically propagated to all log entries generated during that request lifecycle.
+
+- Sensitive data (e.g., API keys, Authorization headers) is masked/redacted in the logging middleware.
+
+- **Business Value:** Reduces Mean Time to Resolution (MTTR) by allowing engineers to query logs systematically rather than grepping text files.
+
+- **Priority:** High (P0)
+
+- **Dependencies:** Epic 1 (FastAPI Foundation)
+
+- **Technical Notes:** Recommend `structlog`. Use standard Python logging for third-party libraries but capture and format them through the structured logging pipeline.
+
+- **Story Points:** 3
+
+- **Definition of Done:** Code merged, unit tests pass, JSON logs verified in standard output, documentation updated.
+
+**Task Breakdown (US-2.1):**
+
+- **Task 1: Configure Structlog setup**
+
+- *Complexity:* Low
+
+- *Dependencies:* None
+
+- *Expected Files:* `backend/core/logger.py`, `backend/core/config.py`
+
+- *Testing:* Unit tests verifying JSON output format.
+
+- **Task 2: Implement FastAPI Request ID Middleware**
+
+- *Complexity:* Medium
+
+- *Dependencies:* Task 1
+
+- *Expected Files:* `backend/api/middleware/logging_middleware.py`, `backend/main.py`
+
+- *Testing:* Integration tests ensuring `request_id` matches across request lifecycle.
+
+---
+
+### US-2.2: Implement Distributed Tracing (OpenTelemetry)
+
+- **Description:** Instrument the application with OpenTelemetry (OTEL) to track request flows across boundaries (FastAPI -> PostgreSQL -> Neo4j -> External LLM API).
+
+- **Acceptance Criteria:**
+
+- OTEL SDK is initialized at application startup.
+
+- FastAPI requests generate spans automatically.
+
+- Database queries (SQLAlchemy/pgvector and Neo4j Python Driver) are instrumented and generate child spans.
+
+- Traces are exported to a local tracing backend (e.g., Jaeger or Zipkin) running in Docker Compose.
+
+- **Business Value:** Provides complete visibility into latency bottlenecks, especially critical for multi-stage GraphRAG pipelines where a slow Cypher query could degrade the user experience.
+
+- **Priority:** High (P0)
+
+- **Dependencies:** US-2.1
+
+- **Technical Notes:** Use `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-sqlalchemy`.
+
+- **Story Points:** 5
+
+- **Definition of Done:** Spans successfully visible in local Jaeger UI for standard API requests.
+
+**Task Breakdown (US-2.2):**
+
+- **Task 1: Setup OpenTelemetry SDK & FastAPI Instrumentation**
+
+- *Complexity:* Medium
+
+- *Dependencies:* None
+
+- *Expected Files:* `backend/core/telemetry.py`, `backend/main.py`
+
+- *Testing:* Unit test mocking the span exporter.
+
+- **Task 2: Instrument Neo4j and PostgreSQL connections**
+
+- *Complexity:* Medium
+
+- *Dependencies:* Task 1
+
+- *Expected Files:* `backend/core/database.py`, `backend/core/graph_db.py`
+
+- *Testing:* Integration tests validating DB queries create child spans.
+
+- **Task 3: Add Jaeger to Docker Compose local stack**
+
+- *Complexity:* Low
+
+- *Dependencies:* None
+
+- *Expected Files:* `docker/docker-compose.yaml`
+
+- *Testing:* Verify Jaeger UI is accessible at `localhost:16686`.
+
+---
+
+### US-2.3: Expose Application Metrics Endpoint
+
+- **Description:** Expose a `/metrics` endpoint to serve Prometheus-compatible metrics. Track standard application health metrics (request count, latency distributions) and establish a framework for custom Engineering Intelligence metrics later.
+
+- **Acceptance Criteria:**
+
+- Endpoint `GET /metrics` exists and returns Prometheus text format.
+
+- Tracks HTTP request duration (Histogram).
+
+- Tracks total HTTP requests (Counter) by status code and path.
+
+- Tracks current active database connections (Gauge).
+
+- **Business Value:** Enables proactive alerting (e.g., alerting the on-call engineer if the 95th percentile latency of graph traversals exceeds 2 seconds).
+
+- **Priority:** Medium (P1)
+
+- **Dependencies:** None
+
+- **Technical Notes:** Use `prometheus-client` and standard FastAPI middleware for metrics.
+
+- **Story Points:** 3
+
+- **Definition of Done:** Endpoint returns properly formatted data, passing load test checks without degrading API performance.
+
+**Task Breakdown (US-2.3):**
+
+- **Task 1: Build Prometheus Metrics Middleware**
+
+- *Complexity:* Medium
+
+- *Dependencies:* None
+
+- *Expected Files:* `backend/api/middleware/metrics_middleware.py`, `backend/core/metrics.py`
+
+- *Testing:* E2E test making multiple requests and asserting counter increments.
+
+- **Task 2: Expose /metrics route safely**
+
+- *Complexity:* Low
+
+- *Dependencies:* Task 1
+
+- *Expected Files:* `backend/api/routers/system.py`
+
+- *Testing:* API test asserting 200 OK and text/plain response.
+
+---
+
+### US-2.4: LLM & GraphRAG Telemetry Foundation
+
+- **Description:** Create specialized telemetry wrappers for LLM calls to track prompt tokens, completion tokens, costs, and model latency. This is essential for controlling cloud costs and measuring AI generation performance.
+
+- **Acceptance Criteria:**
+
+- Custom OTEL spans created specifically for LLM calls.
+
+- Metrics counters established for `llm_tokens_total` (labeled by model and prompt/completion).
+
+- Latency histograms created for `llm_generation_duration_seconds`.
+
+- **Business Value:** Provides strict governance and FinOps capabilities to monitor the financial cost of running the Engineering Intelligence platform.
+
+- **Priority:** Medium (P1)
+
+- **Dependencies:** US-2.2, US-2.3
+
+- **Technical Notes:** Create a reusable decorator or base class for all external AI interactions that automatically handles the token tracking.
+
+- **Story Points:** 3
+
+- **Definition of Done:** Dummy LLM call implemented in tests triggers token counters and span generation.
+
+**Task Breakdown (US-2.4):**
+
+- **Task 1: Design AI Telemetry Decorator/Wrapper**
+- *Complexity:* High
+- *Dependencies:* US-2.2
+- *Expected Files:* `backend/core/ai_telemetry.py`
+- *Testing:* Unit tests asserting correct token counting and metrics logging using mock OpenAI responses.
+
+---
+
 ## Epic 3: Event-Driven Ingestion Architecture
   * *Rationale:* Promoted from Epic 15. The prompt demands incremental updates (no full rebuilds). We must lay down the Event Bus (e.g., handling `CommitDetected`, `ServiceAdded` events) before writing any ingestion logic.
 

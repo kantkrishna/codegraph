@@ -1,11 +1,5 @@
 # ADR-001: API Framework & Application Architecture
 
-**Status:** Proposed
-
-**Date:** Current
-
-**Epic:** Epic 1 - Platform Foundation & Core API
-
 ### Context
 
 CodeGraph requires a highly performant backend to handle concurrent graph traversals, vector similarity searches, and streaming LLM responses. The codebase will grow rapidly as we add connectors for GitHub, Confluence, and Jira. If we do not impose strict structural boundaries early, the AI logic, database queries, and routing will become a tangled monolith.

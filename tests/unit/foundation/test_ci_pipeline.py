@@ -14,7 +14,7 @@ def load_ci_workflow() -> dict[Any, Any]:
     ci_path = Path(".github/workflows/ci.yml")
     if not ci_path.exists():
         raise FileNotFoundError("CI workflow file missing (Red Phase)")
-    with open(ci_path, "r") as f:
+    with open(ci_path) as f:
         # yaml.safe_load returns Any, so we cast/return it implicitly as our typed dict
         return yaml.safe_load(f) or {}
 
@@ -27,13 +27,13 @@ def test_ci_file_exists() -> None:
 def test_ci_triggers_on_pr_to_main() -> None:
     """Verify CI is configured to run on PRs to the main branch."""
     config = load_ci_workflow()
-    
+
     # CRITICAL FIX: PyYAML parses the unquoted YAML key 'on:' as the boolean True.
     # We must check for both the string 'on' and the boolean True.
     triggers = config.get("on", config.get(True, {}))
-    
+
     assert "pull_request" in triggers, "Missing pull_request trigger"
-    
+
     pr_branches = triggers["pull_request"].get("branches", [])
     assert "main" in pr_branches, "Pipeline does not trigger on PRs to main"
 
