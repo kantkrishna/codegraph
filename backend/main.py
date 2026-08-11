@@ -1,10 +1,12 @@
 # backend/main.py
-
+#
 # This file defines the main FastAPI application instance.
 
 from fastapi import FastAPI
 
 from backend.api.middleware.logging_middleware import LoggingMiddleware
+from backend.api.middleware.metrics_middleware import MetricsMiddleware
+from backend.api.routers import system
 from backend.core.logger import setup_logging
 from backend.core.telemetry import setup_telemetry
 
@@ -17,11 +19,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Register Middleware
+# Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(LoggingMiddleware)
 
-# AC 1: Initialize OpenTelemetry for Distributed Tracing
+# Initialize OpenTelemetry for Distributed Tracing
 setup_telemetry(app)
+
+# Register Routers
+app.include_router(system.router)
 
 
 @app.get("/health")

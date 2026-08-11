@@ -2,6 +2,8 @@
 
 # This file contains unit tests for OpenTelemetry distributed tracing configuration.
 
+from collections.abc import Generator
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,9 +14,10 @@ from backend.core.telemetry import setup_telemetry
 
 
 @pytest.fixture(scope="module")
-def memory_exporter() -> InMemorySpanExporter:
+def memory_exporter() -> Generator[InMemorySpanExporter, None, None]:
     """Fixture to capture OTEL spans in memory, created once per test module."""
-    return InMemorySpanExporter()
+    exporter = InMemorySpanExporter()
+    yield exporter
 
 
 @pytest.fixture(scope="module")
@@ -26,7 +29,6 @@ def instrumented_app(memory_exporter: InMemorySpanExporter) -> FastAPI:
     def trace_test() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Initialize telemetry exactly once using the shared memory exporter
     setup_telemetry(app, "test-service", exporter=memory_exporter)
     return app
 
