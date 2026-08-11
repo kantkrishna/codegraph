@@ -1,0 +1,70 @@
+# backend/domain/events/ingestion.py
+#
+# This file defines the specific polymorphic payloads for ingestion events
+# like RepositoryIndexed, CommitDetected, ServiceAdded, and DocumentationUpdated.
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, TypeAdapter
+
+from .base import CodeGraphEvent
+
+
+# --- Payloads ---
+class RepositoryIndexedPayload(BaseModel):
+    repository_url: str
+    commit_hash: str
+
+
+class CommitDetectedPayload(BaseModel):
+    repository_url: str
+    branch: str
+    commit_hash: str
+    author: str
+
+
+class ServiceAddedPayload(BaseModel):
+    service_name: str
+    language: str
+    repository_url: str
+
+
+class DocumentationUpdatedPayload(BaseModel):
+    document_url: str
+    document_type: str
+    repository_url: str
+
+
+# --- Events ---
+class RepositoryIndexedEvent(CodeGraphEvent[RepositoryIndexedPayload]):
+    type: Literal["RepositoryIndexed"] = "RepositoryIndexed"
+
+
+class CommitDetectedEvent(CodeGraphEvent[CommitDetectedPayload]):
+    type: Literal["CommitDetected"] = "CommitDetected"
+
+
+class ServiceAddedEvent(CodeGraphEvent[ServiceAddedPayload]):
+    type: Literal["ServiceAdded"] = "ServiceAdded"
+
+
+class DocumentationUpdatedEvent(CodeGraphEvent[DocumentationUpdatedPayload]):
+    type: Literal["DocumentationUpdated"] = "DocumentationUpdated"
+
+
+# --- Polymorphic Router ---
+IngestionEvent = (
+    RepositoryIndexedEvent | CommitDetectedEvent | ServiceAddedEvent | DocumentationUpdatedEvent
+)
+
+# TypeAdapter configured with a discriminator allows mapping arbitrary dictionaries
+# to the correct specific Event class based on the 'type' field.
+_event_adapter: TypeAdapter[IngestionEvent] = TypeAdapter(IngestionEvent)
+
+
+def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
+    """
+    Parses a raw dictionary into the appropriate specific CodeGraphEvent subtype.
+    Raises pydantic.ValidationError if invalid.
+    """
+    return _event_adapter.validate_python(payload)
