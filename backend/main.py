@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 from backend.api.middleware.logging_middleware import LoggingMiddleware
 from backend.api.middleware.metrics_middleware import MetricsMiddleware
-from backend.api.routers import system
+from backend.api.routers import system, webhooks
 from backend.core.logger import setup_logging
 from backend.core.telemetry import setup_telemetry
 
@@ -28,6 +28,7 @@ setup_telemetry(app)
 
 # Register Routers
 app.include_router(system.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/health")

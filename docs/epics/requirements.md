@@ -25,6 +25,10 @@
     * [US-3.4: Dead Letter Queue (DLQ) & Resilience Mechanisms](#us-34-dead-letter-queue-DLQ--resilience-mechanisms)
 * [Phase 2: Structural Knowledge Extraction (The Deterministic Brain)](#phase-2-structural-knowledge-extraction-the-deterministic-brain)
   * [Epic 4: Repository Ingestion (ASTs & Dependencies)](#epic-4-repository-ingestion-asts--dependencies)
+    * [US-4.1: Secure Source Code Provider Integration (GitHub App)](#us-41-secure-source-code-provider-integration-github-app)
+    * [US-4.2: Asynchronous Repository Clone Worker](#us-42-asynchronous-repository-clone-worker)
+    * [US-4.3: AST Entity Extraction via Tree-sitter](#us-43-ast-entity-extraction-via-tree-sitter)
+    * [US-4.4: Application Dependency & Relationship Extraction](#us-44-application-dependency--relationship-extraction)
   * [Epic 5: Documentation Ingestion](#epic-5-documentation-ingestion)
   * [Epic 6: Knowledge Graph Builder](#epic-6-knowledge-graph-builder)
 * [Phase 3: Semantic Processing (The Probabilistic Brain)](#phase-3-semantic-processing-the-probabilistic-brain)
@@ -495,6 +499,64 @@ Instead of boiling the ocean and indexing an entire enterprise, our MVP will sim
 
 ## Epic 4: Repository Ingestion (ASTs & Dependencies)
   * *Rationale:* Connects to GitHub, clones code, and parses Abstract Syntax Trees.
+
+## User Story Breakdown
+
+### US-4.1: Secure Source Code Provider Integration (GitHub App)
+
+* **Description:** As a Platform Administrator, I need to connect CodeGraph to my GitHub Organization via a GitHub App so that the platform can securely authenticate and listen to repository events.
+* **Acceptance Criteria:**
+* System supports GitHub App installation (OAuth/JWT authentication).
+* Webhook endpoint securely receives payload and validates HMAC signatures.
+* Webhook pushes a `RepositoryIngestionRequested` event to the Event Bus.
+
+* **Business Value:** Establishes secure, standard enterprise access without relying on individual developer Personal Access Tokens (PATs).
+* **Dependencies:** Epic 3 (Event Bus must be available).
+* **Technical Notes:** Use PyGithub with JWT for App authentication. Store private keys securely via Pydantic Settings/Vault.
+* **Story Points:** 5
+* **Definition of Done:** Code merged, unit tests pass (mocking GitHub API), webhook payload validation verified, observability traces active.
+
+### US-4.2: Asynchronous Repository Clone Worker
+
+* **Description:** As the Ingestion Pipeline, I need to react to `RepositoryIngestionRequested` events by asynchronously downloading the code so that the main API remains non-blocking.
+* **Acceptance Criteria:**
+* Background worker consumes the event and performs a shallow clone (`--depth 1`).
+* Clones to an ephemeral, isolated `/tmp` directory inside the worker container.
+* Traverses the directory, filters out ignored files (`.gitignore`, binaries).
+* Emits `FileDiscovered` events to the Event Bus for each valid source file.
+* Cleans up the ephemeral directory upon completion or failure.
+
+* **Business Value:** Ensures the platform can ingest massive enterprise repositories without crashing the main API layer.
+* **Priority:** High
+* **Story Points:** 8
+* **Definition of Done:** Worker deployed, integration test validates successful clone and cleanup of a sample repo, disk usage metrics tracked in Datadog/Prometheus.
+
+### US-4.3: AST Entity Extraction via Tree-sitter
+
+* **Description:** As the Ingestion Pipeline, I need to parse source files into Abstract Syntax Trees so that I can extract structural engineering entities (Classes, Functions, Methods).
+* **Acceptance Criteria:**
+* Worker consumes `FileDiscovered` events.
+* Detects language (Python, JS/TS) and applies the correct Tree-sitter grammar.
+* Extracts structural nodes (e.g., class names, function signatures, docstrings).
+* Normalizes and publishes these as `EntityExtracted` events.
+
+* **Business Value:** Moves the platform beyond naive text chunking into true semantic code understanding.
+* **Dependencies:** US-4.2.
+* **Technical Notes:** Focus purely on Python and TypeScript for the MVP. Create a generalized interface for adding Go/Java later.
+* **Story Points:** 8
+* **Definition of Done:** Unit tests validate correct extraction of classes/functions for Python and TS files.
+
+### US-4.4: Application Dependency & Relationship Extraction
+
+* **Description:** As the Ingestion Pipeline, I need to extract import statements and package manifests so that CodeGraph can map internal and external dependencies.
+* **Acceptance Criteria:**
+* Parses standard package files (`requirements.txt`, `pyproject.toml`, `package.json`).
+* Traverses AST to extract file-to-file import relationships.
+* Publishes `DependencyDetected` and `RelationshipExtracted` events to the Event Bus.
+
+* **Business Value:** Provides the raw edge data needed to calculate blast radius and dependency risk scores.
+* **Story Points:** 5
+* **Definition of Done:** Pipeline successfully identifies internal cross-file imports and external package dependencies in the sample data repository.
 
 ---
 

@@ -105,13 +105,40 @@ services:
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
     depends_on:
       - kafka
+  
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - neo4j
+
+  worker:
+    build: .
+    command: arq backend.worker.WorkerSettings
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      # Required if we want to test locally without rebuilding images
+      - .:/app
 
 volumes:
-  kafka_data:
-    driver: local
   neo4j_data:
     driver: local
   neo4j_logs:
     driver: local
   postgres_data:
+    driver: local
+  kafka_data:
     driver: local

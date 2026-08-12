@@ -1,18 +1,21 @@
 # ADR-005: Logging Standards & Structure
 
 ### Context
+
 FastAPI and Uvicorn default to unstructured, plain-text logging. In a distributed engineering intelligence platform, text logs are nearly impossible to query effectively at scale. Furthermore, our platform ingests proprietary source code and architectural data, raising significant data privacy concerns.
 
 ### Problem
+
 We must enforce a unified logging format that is machine-readable, traceable across distributed boundaries, and secure against accidental leakage of sensitive engineering assets (like API keys in code or raw LLM prompts).
 
-### Options
+### Options Considered
 
 1. **Python Standard `logging` (JSON formatter):** Native, but requires heavy boilerplate to inject contextual data (like `request_id`) into every log.
 2. **`Loguru`:** Highly readable, great developer experience, but slightly less flexible for strict enterprise JSON schema enforcement.
 3. **`structlog`:** Industry standard for structured, contextual JSON logging in Python.
 
 ### Decision
+
 We will implement **`structlog`** as the exclusive logging library for CodeGraph.
 
 * **Schema:** Every log emitted will be strict JSON containing at minimum: `timestamp`, `level`, `service_name`, `request_id`, `event` (the message), and `duration` (if applicable).
@@ -25,4 +28,5 @@ We will implement **`structlog`** as the exclusive logging library for CodeGraph
 * **Negative:** Engineers must break the habit of using standard `print()` or `logging.info()`. We must enforce this via CI/CD linting (Ruff).
 
 ### Future Evolution
+
 We will eventually expose an API endpoint to dynamically toggle the log level (e.g., from `INFO` to `DEBUG`) at runtime without restarting the application, allowing real-time debugging of production ingestion errors.
