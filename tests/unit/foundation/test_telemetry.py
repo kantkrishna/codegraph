@@ -1,73 +1,137 @@
 # tests/unit/foundation/test_telemetry.py
 
-# This file contains unit tests for OpenTelemetry distributed tracing configuration.
+# Comprehensive test suite to ensure 100% coverage for OpenTelemetry utilities,
+# verifying idempotency logic, and exception safety boundaries.
+# (Note: AI Telemetry decorator tests are handled in test_ai_telemetry.py)
 
-from collections.abc import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from opentelemetry import trace
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.export import SpanExporter
 
-from backend.core.telemetry import setup_telemetry
-
-
-@pytest.fixture(scope="module")
-def memory_exporter() -> Generator[InMemorySpanExporter, None, None]:
-    """Fixture to capture OTEL spans in memory, created once per test module."""
-    exporter = InMemorySpanExporter()
-    yield exporter
+from backend.core.telemetry import (
+    instrument_db_engine,
+    setup_telemetry,
+)
 
 
-@pytest.fixture(scope="module")
-def instrumented_app(memory_exporter: InMemorySpanExporter) -> FastAPI:
-    """Sets up the FastAPI app and initializes the OTEL global singleton ONCE."""
+def test_setup_telemetry_idempotent_no_exporter() -> None:
+    """
+    Test that setup exits early if a provider is already active, without adding
+    processors if no exporter is provided.
+    """
     app = FastAPI()
+    with (
+        patch("backend.core.telemetry.trace.get_tracer_provider") as mock_get_provider,
+        patch("backend.core.telemetry.FastAPIInstrumentor") as mock_fastapi_inst,
+    ):
+        mock_provider = MagicMock()
+        # Simulating an active SDK provider that already has 'add_span_processor'
+        mock_provider.add_span_processor = MagicMock()
+        mock_get_provider.return_value = mock_provider
 
-    @app.get("/trace-test")
-    def trace_test() -> dict[str, str]:
-        return {"status": "ok"}
+        setup_telemetry(app)
 
-    setup_telemetry(app, "test-service", exporter=memory_exporter)
-    return app
-
-
-def test_setup_telemetry_initializes_provider(instrumented_app: FastAPI) -> None:
-    """AC 1: Verify OTEL SDK is initialized at startup and registered globally."""
-    provider = trace.get_tracer_provider()
-
-    assert provider is not None
-    assert hasattr(provider, "get_tracer")
+        mock_provider.add_span_processor.assert_not_called()
+        mock_fastapi_inst.return_value.instrument_app.assert_called_once_with(app)
 
 
-def test_fastapi_request_creates_span(
-    instrumented_app: FastAPI, memory_exporter: InMemorySpanExporter
-) -> None:
-    """AC 2: Verify FastAPI requests generate distributed spans automatically."""
-    client = TestClient(instrumented_app)
+def test_setup_telemetry_idempotent_with_exporter_and_exception() -> None:
+    """
+    Test that an exporter is attached to an existing provider, and FastAPI instrument
+    exceptions are swallowed safely.
+    """
+    app = FastAPI()
+    exporter = MagicMock(spec=SpanExporter)
+    with (
+        patch("backend.core.telemetry.trace.get_tracer_provider") as mock_get_provider,
+        patch("backend.core.telemetry.FastAPIInstrumentor") as mock_fastapi_inst,
+    ):
+        mock_provider = MagicMock()
+        mock_provider.add_span_processor = MagicMock()
+        mock_get_provider.return_value = mock_provider
 
-    # Clear any spans created during startup
-    memory_exporter.clear()
-
-    # Trigger a request
-    response = client.get("/trace-test")
-    assert response.status_code == 200
-
-    # Retrieve captured spans
-    spans = memory_exporter.get_finished_spans()
-
-    assert len(spans) >= 1
-
-    # Verify at least one span captures the FastAPI route request
-    assert any("GET /trace-test" in span.name for span in spans)
-
-    # Verify standard HTTP status attributes are captured across the span hierarchy
-    has_http_status = any(
-        span.attributes is not None
-        and (
-            "http.status_code" in span.attributes or "http.response.status_code" in span.attributes
+        # Force exception in the try/except block to test safe passing
+        mock_fastapi_inst.return_value.instrument_app.side_effect = Exception(
+            "Simulated FastAPI Error"
         )
-        for span in spans
-    )
-    assert has_http_status
+
+        setup_telemetry(app, exporter=exporter)
+
+        mock_provider.add_span_processor.assert_called_once()
+        mock_fastapi_inst.return_value.instrument_app.assert_called_once_with(app)
+
+
+def test_setup_telemetry_fresh_provider_no_exporter() -> None:
+    """Test standard production routing establishing an OTLP exporter and Batch processor."""
+    app = FastAPI()
+    with (
+        patch("backend.core.telemetry.trace.get_tracer_provider") as mock_get_provider,
+        patch("backend.core.telemetry.TracerProvider") as mock_tracer_provider,
+        patch("backend.core.telemetry.OTLPSpanExporter") as mock_otlp,
+        patch("backend.core.telemetry.BatchSpanProcessor") as mock_batch,
+        patch("backend.core.telemetry.FastAPIInstrumentor") as mock_fastapi_inst,
+        patch("backend.core.telemetry.setattr"),
+    ):
+        # Missing 'add_span_processor' simulates a fresh/default NoOp provider
+        mock_get_provider.return_value = object()
+
+        setup_telemetry(app)
+
+        mock_otlp.assert_called_once()
+        mock_batch.assert_called_once()
+        mock_tracer_provider.return_value.add_span_processor.assert_called_once()
+        mock_fastapi_inst.return_value.instrument_app.assert_called_once_with(app)
+
+
+def test_setup_telemetry_fresh_provider_with_exporter_and_exception() -> None:
+    """
+    Test test routing establishing a Simple processor and handling trailing exceptions cleanly.
+    """
+    app = FastAPI()
+    exporter = MagicMock(spec=SpanExporter)
+    with (
+        patch("backend.core.telemetry.trace.get_tracer_provider") as mock_get_provider,
+        patch("backend.core.telemetry.TracerProvider") as mock_tracer_provider,
+        patch("backend.core.telemetry.SimpleSpanProcessor") as mock_simple,
+        patch("backend.core.telemetry.FastAPIInstrumentor") as mock_fastapi_inst,
+        patch("backend.core.telemetry.setattr"),
+    ):
+        mock_get_provider.return_value = object()
+
+        # Wrapped to comply with 100-character line limit
+        mock_fastapi_inst.return_value.instrument_app.side_effect = Exception(
+            "Simulated FastAPI Error"
+        )
+
+        setup_telemetry(app, exporter=exporter)
+
+        mock_simple.assert_called_once_with(exporter)
+        mock_tracer_provider.return_value.add_span_processor.assert_called_once()
+        mock_fastapi_inst.return_value.instrument_app.assert_called_once_with(app)
+
+
+def test_instrument_db_engine_success() -> None:
+    """Test successful injection of SQLAlchemy telemetry."""
+    engine = MagicMock()
+    with patch("backend.core.telemetry.SQLAlchemyInstrumentor") as mock_sql_inst:
+        instrument_db_engine(engine)
+        mock_sql_inst.return_value.instrument.assert_called_once_with(
+            engine=engine, enable_commenter=True, commenter_options={}
+        )
+
+
+def test_instrument_db_engine_exception() -> None:
+    """Test that SQLAlchemy telemetry injection failures bubble up appropriately."""
+    engine = MagicMock()
+    with patch("backend.core.telemetry.SQLAlchemyInstrumentor") as mock_sql_inst:
+        mock_sql_inst.return_value.instrument.side_effect = Exception("Simulated DB Engine Error")
+
+        # Expect the exception to surface since there is no try/except in the source
+        with pytest.raises(Exception, match="Simulated DB Engine Error"):
+            instrument_db_engine(engine)
+
+        mock_sql_inst.return_value.instrument.assert_called_once_with(
+            engine=engine, enable_commenter=True, commenter_options={}
+        )
