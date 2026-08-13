@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, TypeAdapter
 
-from .base import CodeGraphEvent
+from backend.domain.events.base import CodeGraphEvent
 
 
 # --- Payloads ---
@@ -33,6 +33,40 @@ class DocumentationUpdatedPayload(BaseModel):
     document_url: str
     document_type: str
     repository_url: str
+
+
+# backend/domain/events/ingestion.py
+#
+# This file defines the specific ingestion events used in Epic 4 and Epic 5.
+# (Note: Keep your existing Epic 3 models like RepositoryIndexedEvent untouched above these)
+
+
+class FileDiscovered(CodeGraphEvent[Any]):
+    type: str = "FileDiscovered"
+    repository: str
+    file_path: str
+    content: str
+    data: Any | None = None  # Override required base field for this specific event
+
+
+class DocumentationUpdated(CodeGraphEvent[Any]):
+    type: str = "DocumentationUpdated"
+    repository: str
+    file_path: str
+    metadata: dict[str, Any]
+    content: str
+    data: Any | None = None  # Override required base field for this specific event
+
+
+class ADRCreated(CodeGraphEvent[Any]):
+    type: str = "ADRCreated"
+    repository: str
+    file_path: str
+    metadata: dict[str, Any]
+    content: str
+    status: str | None = None
+    decision: str | None = None
+    data: Any | None = None  # Override required base field for this specific event
 
 
 # --- Events ---

@@ -1,25 +1,27 @@
 # backend/domain/events/base.py
 #
-# This file defines the core CloudEvents base model for all CodeGraph events.
+# This file defines the base CloudEvents compliant schema for all CodeGraph events.
 
+import uuid
 from datetime import UTC, datetime
-from typing import TypeVar
-from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-T = TypeVar("T")
-
 
 class CodeGraphEvent[T](BaseModel):
-    """
-    Base event model implementing the CloudEvents v1.0 specification.
-    """
+    """Base event model following a simplified CloudEvents specification."""
 
-    id: UUID = Field(default_factory=uuid4)
-    source: str
-    specversion: str = "1.0"
-    type: str
-    datacontenttype: str = "application/json"
+    # Union allows Epic 3 to receive a UUID object, while Epic 5 can pass string IDs
+    id: uuid.UUID | str = Field(default_factory=uuid.uuid4, description="Unique event identifier")
+    source: str = Field(..., description="System emitting the event")
+    type: str = Field(..., description="The type of the event")
     time: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    # CloudEvents 1.0 specification fields required by Epic 3 tests
+    specversion: str = Field(default="1.0", description="CloudEvents specification version")
+    datacontenttype: str = Field(
+        default="application/json", description="Content type of the data payload"
+    )
+
+    # Strictly required to satisfy Epic 3 validation tests
     data: T

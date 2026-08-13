@@ -30,6 +30,10 @@
     * [US-4.3: AST Entity Extraction via Tree-sitter](#us-43-ast-entity-extraction-via-tree-sitter)
     * [US-4.4: Application Dependency & Relationship Extraction](#us-44-application-dependency--relationship-extraction)
   * [Epic 5: Documentation Ingestion](#epic-5-documentation-ingestion)
+    * [US-5.1: In-Repository Markdown Parsing](#us-51-in-repository-markdown-parsing)
+    * [US-5.2: Architecture Decision Record (ADR) Extraction](#us-52-architecture-decision-record-adr-extraction)
+    * [US-5.3: Confluence Incremental Sync Connector](#us-53-confluence-incremental-sync-connector)
+    * [US-5.4: Document-to-Entity Linking Worker](#us-54-document-to-entity-linking-worker)
   * [Epic 6: Knowledge Graph Builder](#epic-6-knowledge-graph-builder)
 * [Phase 3: Semantic Processing (The Probabilistic Brain)](#phase-3-semantic-processing-the-probabilistic-brain)
   * [Epic 7: Graph-Aware Chunking Framework](#epic-7-graph-aware-chunking-framework)
@@ -562,6 +566,87 @@ Instead of boiling the ocean and indexing an entire enterprise, our MVP will sim
 
 ## Epic 5: Documentation Ingestion
   * *Rationale:* Ingests Markdown, Confluence, and ADRs.
+
+## User Story Breakdown
+
+### US-5.1: In-Repository Markdown Parsing
+
+* **Title:** Parse In-Repository Markdown and Emits Events
+* **Description:** As the Ingestion Pipeline, I need to process discovered `.md` files so that their structural content (frontmatter, headers, body) can be normalized and broadcasted to the platform.
+* **Acceptance Criteria:**
+* Worker consumes `FileDiscovered` events (from US-4.2) and filters for Markdown extensions.
+* Parses YAML frontmatter into a structured metadata dictionary.
+* Strips invalid characters and normalizes file paths.
+* Publishes a `DocumentationUpdated` event to the Event Bus containing the normalized text, metadata, and repository provenance.
+
+* **Business Value:** Unlocks architectural knowledge stored directly next to the source code, reducing knowledge silos.
+* **Priority:** High (P0)
+* **Dependencies:** US-3.3 (Event Routing), US-4.2 (Repository Clone Worker).
+* **Technical Notes:** Use `python-frontmatter` or `markdown-it-py`. Ensure the event payload matches the polymorphic `CodeGraphEvent` schema.
+* **Story Points:** 5
+* **Definition of Done:** Integration tests confirm a pushed `.md` file results in a validated `DocumentationUpdated` event in the Kafka topic.
+* **Task Breakdown:**
+1. **Task 1: Build Markdown Parser Utility** Build a Markdown parser utility in etl/connectors/markdown/parser.py and unit test it with valid and malformed files.
+2. **Task 2: Implement FileDiscovered Event Handler** Implement a `FileDiscovered` event handler in `etl/connectors/markdown/worker.py` and test for `DocumentationUpdated` emission.
+
+### US-5.2: Architecture Decision Record (ADR) Extraction
+
+* **Title:** Extract Structured Metadata from ADRs
+* **Description:** As the Ingestion Pipeline, I need to recognize ADR files and specifically extract their context, status, and decisions so that architectural evolution can be tracked as distinct graph entities.
+* **Acceptance Criteria:**
+* Pipeline identifies ADRs using path heuristics (e.g., `docs/adr/`, `architecture/decisions/`).
+* Regex/heuristic parser specifically extracts the "Status" (e.g., Proposed, Accepted, Deprecated) and "Decision" blocks.
+* Emits the specialized `ADRCreated` engineering event.
+
+* **Business Value:** Enables the platform to answer "Why was this database chosen?" and tracks the historical timeline of architectural drift.
+* **Priority:** High (P1)
+* **Dependencies:** US-5.1
+* **Technical Notes:** ADRs often follow the MADR (Markdown Any Decision Record) format. Build the parser to handle standard heading variations.
+* **Story Points:** 3
+* **Definition of Done:** Pipeline successfully identifies an ADR in the sample repo, parses the status, and emits the exact `ADRCreated` event.
+* **Task Breakdown:**
+1. **Task 1: Build ADR-Specific Parsing Logic** Build and unit-test an ADR-specific parser in `etl/connectors/markdown/adr_parser.py` to extract status from MADR templates.
+2. **Task 2: Integrate into Markdown Worker** Integrate the parser into etl/connectors/markdown/worker.py and run E2E tests for event routing.
+
+### US-5.3: Confluence Incremental Sync Connector
+
+* **Title:** Implement Confluence Cloud API Connector
+* **Description:** As a Platform Administrator, I need CodeGraph to periodically sync documents from a specified Confluence Cloud space so that external enterprise tribal knowledge is ingested. *Note: Confluence Data Center (on-prem) is explicitly out of scope for the MVP.*
+* **Acceptance Criteria:**
+* System accepts Confluence Cloud credentials (URL, Email, API Token).
+* Worker queries the Confluence Cloud REST API `/wiki/api/v2/pages` filtered by `lastModified`.
+* Converts Atlassian Document Format (ADF) or HTML to normalized Markdown.
+* Emits `DocumentationUpdated` events.
+
+* **Business Value:** Captures business requirements, meeting notes, and runbooks that do not live in Git repositories, without over-complicating MVP infrastructure with on-premise networking.
+* **Priority:** Medium (P2)
+* **Dependencies:** US-3.1 (Event Bus)
+* **Technical Notes:** Use `atlassian-python-api`. Implement a basic scheduler (e.g., `asyncio` loop or lightweight APScheduler) to trigger the sync every X minutes.
+* **Story Points:** 8
+* **Definition of Done:** Worker successfully paginates through a mock Confluence space, converts HTML to Markdown, and emits events.
+* **Task Breakdown:**
+1. **Task 1: Confluence Cloud API Client Wrapper:** Build HTTP client tailored strictly to Atlassian Cloud authentication headers.
+2. **Task 2: ADF/HTML to Markdown Converter:** Parse Atlassian-specific markup to standard markdown.
+3. **Task 3: Polling Scheduler and State Management:** Implement basic schedule loop to pull incremental changes.
+
+### US-5.4: Document-to-Entity Linking Worker
+
+* **Title:** Heuristic Document Entity Linking (Direct Graph Query)
+* **Description:** As the Knowledge Graph Builder, I need documentation events to contain metadata linking them to recognized code entities (Services, Repos) so I can create edges in the graph.
+* **Acceptance Criteria:**
+* A downstream worker listens to `DocumentationUpdated` and `ADRCreated` events.
+* Worker extracts potential entity names/aliases from the document text and frontmatter.
+* Worker directly executes a read-only Cypher query against Neo4j to verify if the entity exists.
+* If verified, publishes a `DocumentationLinked` event containing the `doc_id` and the matched Neo4j `node_id`.
+
+* **Business Value:** Creates the crucial connective tissue between text and code with 100% data consistency, enabling accurate GraphRAG queries.
+* **Priority:** High (P1)
+* **Dependencies:** US-5.1, US-5.2, Epic 1 (Neo4j Connection)
+* **Story Points:** 5
+* **Definition of Done:** The worker successfully matches a Confluence page mentioning "AuthService" to the internal AuthService entity ID and publishes the linkage event.
+* **Task Breakdown:**
+1. **Task 1: Implement Neo4j Entity Lookup Service:** Create a read-only Cypher utility in `etl/graph_builder/lookup.py` optimized for batch matching alias names to node IDs.
+2. **Task 2: Linkage Processor & Event Emitter:** Create the worker that listens to doc events, calls the lookup service, and emits `DocumentationLinked` if a match is found in the database.
 
 ---
 
