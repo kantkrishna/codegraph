@@ -8,6 +8,7 @@ import tempfile
 
 from backend.models.events import FileDiscovered
 from backend.services.file_traversal import traverse_repository
+from backend.services.parsers.factory import process_discovered_file
 
 logger = logging.getLogger(__name__)
 
@@ -40,5 +41,8 @@ async def clone_and_process_repository(clone_url: str, repo_id: int, branch: str
 
             event = FileDiscovered(repository_id=repo_id, file_path=relative_path, language=ext)
             await publish_file_discovered(event)
+
+            # Trigger the parser synchronously or enqueue to next worker stage
+            await process_discovered_file(event, temp_dir)
 
         logger.info(f"Completed ingestion traversal for {repo_id}. Ephemeral disk cleaning up.")
