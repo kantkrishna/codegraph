@@ -33,6 +33,16 @@ class DocumentationUpdatedPayload(BaseModel):
     document_url: str
     document_type: str
     repository_url: str
+    # Evolved for Epic 5 to hold the extracted Markdown and headers
+    content: str | None = None
+    title: str | None = None
+
+
+class DocumentationLinkedPayload(BaseModel):
+    doc_id: str
+    node_id: str
+    entity_name: str
+    confidence: float
 
 
 # backend/domain/events/ingestion.py
@@ -84,6 +94,10 @@ class ServiceAddedEvent(CodeGraphEvent[ServiceAddedPayload]):
 
 class DocumentationUpdatedEvent(CodeGraphEvent[DocumentationUpdatedPayload]):
     type: Literal["DocumentationUpdated"] = "DocumentationUpdated"
+
+
+class DocumentationLinkedEvent(CodeGraphEvent[DocumentationLinkedPayload]):
+    type: Literal["DocumentationLinked"] = "DocumentationLinked"
 
 
 # --- Polymorphic Router ---
