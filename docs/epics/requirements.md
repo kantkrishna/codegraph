@@ -35,6 +35,10 @@
     * [US-5.3: Confluence Incremental Sync Connector](#us-53-confluence-incremental-sync-connector)
     * [US-5.4: Document-to-Entity Linking Worker](#us-54-document-to-entity-linking-worker)
   * [Epic 6: Knowledge Graph Builder](#epic-6-knowledge-graph-builder)
+    * [US-6.1: Define and Apply Expanded Graph Schema (V2)](#us-61-define-and-apply-expanded-graph-schema-v2)
+    * [US-6.2: Implement Graph Mutation Service](#us-62-implement-graph-mutation-service)
+    * [US-6.3: Code Entity Event Consumer](#us-63-code-entity-event-consumer)
+    * [US-6.4: Documentation Event Consumer](#us-64-documentation-event-consumer)
 * [Phase 3: Semantic Processing (The Probabilistic Brain)](#phase-3-semantic-processing-the-probabilistic-brain)
   * [Epic 7: Graph-Aware Chunking Framework](#epic-7-graph-aware-chunking-framework)
   * [Epic 8: Embedding Pipeline & Vector Store](#epic-8-embedding-pipeline--vector-store)
@@ -654,6 +658,90 @@ Instead of boiling the ocean and indexing an entire enterprise, our MVP will sim
   * *Rationale:* Moved up. Takes the parsed data from Epics 4/5 and translates it into deterministic Neo4j nodes/edges *before* we do any semantic vectorization.
 
 ---
+
+
+### US-6.1: Define and Apply Expanded Graph Schema (V2)
+
+**Description:** Apply Neo4j unique constraints for the expanded code and documentation ontology to prevent duplicate nodes during asynchronous event ingestion.
+**Acceptance Criteria:**
+
+* Unique constraints exist for `Repository`, `File`, `Class`, `Function`, `Document`, and `ADR` labels using the `node_id` property.
+* Epic 0 constraints (`Service`, `API`, `Database`) remain intact and functional.
+* An automated validation script runs in the CI pipeline to verify schema enforcement on an empty database.
+**Business Value:** Ensures structural data integrity at the database level, preventing the AI from hallucinating duplicate architectures.
+**Dependencies:** Epic 1 (Neo4j Infrastructure).
+**Story Points:** 2
+**Definition of Done:** Python constraint application script is updated, executed successfully against the local Docker Neo4j instance, and merged to `main`.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Update Neo4j constraint automation script to include V2 labels | Low | `scripts/apply-neo4j-constraints.py` |
+| Task 2: Update mock data validation script to test new node uniqueness | Low | `scripts/validate-neo4j-schema.py` |
+
+---
+
+### US-6.2: Implement Graph Mutation Service
+
+**Description:** Create a core backend service that wraps the Neo4j Python driver. This service will expose standardized, idempotent methods for Upserting nodes and edges, preventing individual consumers from writing raw Cypher.
+**Acceptance Criteria:**
+
+* Service exposes an `upsert_node(label, properties)` method utilizing Cypher `MERGE`.
+* Service exposes an `upsert_edge(source_id, target_id, rel_type, properties)` method.
+* Edge upserts strictly enforce the inclusion of the provenance fields defined in ADR-026.
+* Deadlocks or transient Neo4j connection errors trigger automatic retries using exponential backoff.
+**Business Value:** Centralizes database write logic, making the system significantly easier to maintain, audit, and secure.
+**Dependencies:** US-6.1.
+**Story Points:** 5
+**Definition of Done:** Unit tests achieve 90%+ coverage on the mutation service, demonstrating successful retries and idempotent writes.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Build the GraphMutationService class with basic `MERGE` templates | Medium | `backend/graph/mutation_service.py` |
+| Task 2: Implement exponential backoff and retry logic for transaction failures | Medium | `backend/core/decorators.py` |
+| Task 3: Write integration tests verifying idempotent node and edge creation | High | `tests/integration/test_graph_mutations.py` |
+
+---
+
+### US-6.3: Code Entity Event Consumer
+
+**Description:** Build the Kafka consumer worker that listens to AST-derived events (`EntityExtracted`, `DependencyDetected`) and uses the Graph Mutation Service to build the structural code graph.
+**Acceptance Criteria:**
+
+* Consumer subscribes to the `events.ingestion.code` topic.
+* `EntityExtracted` events are translated into `File`, `Class`, and `Function` nodes with `CONTAINS` edges.
+* `DependencyDetected` events are translated into `DEPENDS_ON` or `IMPORTS` edges between files or repositories.
+* OpenTelemetry spans (from Epic 2) successfully wrap the consumer execution and database writes.
+**Business Value:** Automatically translates raw repository code into a queryable, connected map of engineering dependencies.
+**Dependencies:** US-6.2, Epic 3 (Event Broker), Epic 4 (AST Events).
+**Story Points:** 8
+**Definition of Done:** End-to-end integration test proves that publishing a mock `EntityExtracted` event results in the correct nodes appearing in Neo4j.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Register the Kafka consumer loop for code events | Medium | `etl/graph_builder/code_consumer.py` |
+| Task 2: Implement the routing logic mapping event schemas to mutation methods | High | `etl/graph_builder/routers.py` |
+| Task 3: Inject OpenTelemetry trace contexts from the event payload into the DB spans | Medium | `etl/graph_builder/telemetry.py` |
+
+---
+
+### US-6.4: Documentation Event Consumer
+
+**Description:** Build the Kafka consumer worker that listens to documentation events (`DocumentationUpdated`, `ADRCreated`, `DocumentationLinked`) and connects enterprise knowledge to the code graph.
+**Acceptance Criteria:**
+
+* Consumer subscribes to the `events.ingestion.docs` topic.
+* `DocumentationUpdated` events generate `Document` nodes.
+* `ADRCreated` events generate `ADR` nodes containing status and decision properties.
+* `DocumentationLinked` events (from US-5.4) generate `DOCUMENTS` edges connecting the text node to the corresponding structural node (e.g., `Service`).
+**Business Value:** Bridges the gap between what the code does and what the engineers wrote about it, preventing knowledge silos.
+**Dependencies:** US-6.2, Epic 5 (Documentation Events).
+**Story Points:** 5
+**Definition of Done:** Querying the local Neo4j database successfully returns an `ADR` node connected via a `DOCUMENTS` edge to a `Service` node.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Register the Kafka consumer loop for documentation events | Medium | `etl/graph_builder/doc_consumer.py` |
+| Task 2: Implement edge creation logic specifically for heuristic entity linkages | Medium | `etl/graph_builder/linkage_service.py` |
 
 # Phase 3: Semantic Processing (The Probabilistic Brain)
 

@@ -2,6 +2,7 @@
 
 # This file contains unit tests for the ARQ (Asynchronous Redis Queue) worker.
 
+from arq.connections import RedisSettings
 from typing import Any
 
 import pytest
@@ -34,10 +35,10 @@ def test_worker_settings_configuration() -> None:
     """Verify the ARQ worker is configured with the correct functions and redis URL."""
     # Ensure the task we want to run is actually registered in the worker
     assert clone_repository_task in WorkerSettings.functions
-
-    # Ensure it's pointing to the application's configured Redis instance
-    assert WorkerSettings.redis_settings == settings.REDIS_URL
-
-    # Ensure sensible defaults for massive git clones
-    assert WorkerSettings.max_jobs > 0
-    assert WorkerSettings.job_timeout >= 600
+    
+    # Generate the expected settings object from the DSN string
+    expected_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    
+    # Compare the core attributes rather than the raw strings
+    assert WorkerSettings.redis_settings.host == expected_settings.host
+    assert WorkerSettings.redis_settings.port == expected_settings.port

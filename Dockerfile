@@ -19,6 +19,9 @@ COPY pyproject.toml uv.lock* ./
 # Install dependencies (uv will automatically create the .venv here)
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Expose the virtual environment binaries to the system path
+ENV PATH="/app/.venv/bin:$PATH"
+
 # Copy the actual application code
 COPY backend/ /app/backend/
 

@@ -124,7 +124,8 @@ services:
 
   worker:
     build: .
-    command: arq backend.worker.WorkerSettings
+    # command: arq backend.worker.WorkerSettings
+    command: ["uv", "run", "arq", "backend.worker.WorkerSettings"]
     environment:
       - REDIS_URL=redis://redis:6379
     depends_on:
@@ -132,6 +133,7 @@ services:
     volumes:
       # Required if we want to test locally without rebuilding images
       - .:/app
+      - /app/.venv
 
 volumes:
   neo4j_data:
