@@ -1,0 +1,3978 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where empty lines have been removed, security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: **/test/**, **/tests/**
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Empty lines have been removed from all files
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  workflows/
+    ci.yml
+backend/
+  api/
+    dependencies/
+      auth.py
+    middleware/
+      logging_middleware.py
+      metrics_middleware.py
+    routers/
+      health.py
+      system.py
+      webhooks.py
+    __init__.py
+    exceptions.py
+    main.py
+  core/
+    events/
+      broker.py
+      consumer.py
+      publisher.py
+    __init__.py
+    ai_telemetry.py
+    config.py
+    decorators.py
+    logger.py
+    metrics.py
+    telemetry.py
+  domain/
+    events/
+      base.py
+      ingestion.py
+    __init__.py
+  graph/
+    mutation_service.py
+  infrastructure/
+    __init__.py
+    db.py
+  models/
+    events.py
+  services/
+    parsers/
+      base.py
+      factory.py
+      manifest_parser.py
+      python_parser.py
+    __init__.py
+    file_traversal.py
+    git_service.py
+    github_auth.py
+  __init__.py
+  main.py
+  worker.py
+docs/
+  adr/
+    ADRs.md
+  epics/
+    requirements.md
+etl/
+  connectors/
+    confluence/
+      client.py
+      converter.py
+    markdown/
+      __init__.py
+      adr_parser.py
+      parser.py
+      worker.py
+    __init__.py
+  graph_builder/
+    code_consumer.py
+    doc_consumer.py
+    doc_linker.py
+    lookup.py
+    routers.py
+    telemetry.py
+  scheduler/
+    confluence_sync.py
+  __init__.py
+scripts/
+  __init__.py
+  apply_neo4j_constraints.py
+  validate_neo4j_schema.py
+src/
+  codegraph/
+    __init__.py
+.dockerignore
+.gitignore
+.pre-commit-config.yaml
+.python-version
+.repomixignore
+CONTRIBUTING.md
+docker-compose.yml
+Dockerfile
+LICENSE
+Makefile
+pyproject.toml
+README.md
+repomix.config.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="etl/graph_builder/code_consumer.py">
+# etl/graph_builder/code_consumer.py
+# This file consumes AST and Dependency events to build the structural code graph.
+from datetime import datetime, timezone
+import os
+from backend.models.events import EntityExtracted, DependencyDetected
+from backend.graph.mutation_service import GraphMutationService
+from etl.graph_builder.telemetry import with_graph_telemetry
+class CodeGraphConsumer:
+    def __init__(self, mutation_service: GraphMutationService) -> None:
+        self.mutation_service = mutation_service
+    @with_graph_telemetry("consume_entity_extracted")
+    async def handle_entity_extracted(self, event: EntityExtracted) -> None:
+        """Translates EntityExtracted events into File, Class/Function nodes & CONTAINS edges."""
+        file_node_id = f"file:{event.repository_id}:{event.file_path}"
+        file_name = os.path.basename(event.file_path)
+        # 1. Upsert the File Node
+        self.mutation_service.upsert_node(
+            "File", {"node_id": file_node_id, "name": file_name, "repository_id": event.repository_id}
+        )
+        # 2. Upsert the Entity Node (Class or Function)
+        entity_node_id = f"{event.entity_type.lower()}:{event.repository_id}:{event.file_path}:{event.name}"
+        self.mutation_service.upsert_node(
+            event.entity_type, 
+            {"node_id": entity_node_id, "name": event.name, "docstring": event.docstring or ""}
+        )
+        # 3. Create the CONTAINS edge
+        provenance = {
+            "source_system": "ast_parser",
+            "source_uri": event.file_path,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        self.mutation_service.upsert_edge(file_node_id, entity_node_id, "CONTAINS", provenance)
+    @with_graph_telemetry("consume_dependency_detected")
+    async def handle_dependency_detected(self, event: DependencyDetected) -> None:
+        """Translates DependencyDetected events into DEPENDS_ON edges."""
+        file_node_id = f"file:{event.repository_id}:{event.file_path}"
+        package_node_id = f"pkg:{event.package_manager}:{event.package_name}"
+        # Ensure target node exists
+        self.mutation_service.upsert_node(
+            "Service", # Fallback ontology for external packages
+            {"node_id": package_node_id, "name": event.package_name}
+        )
+        provenance = {
+            "source_system": "manifest_parser",
+            "source_uri": event.file_path,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version_constraint": event.version_constraint or ""
+        }
+        self.mutation_service.upsert_edge(file_node_id, package_node_id, "DEPENDS_ON", provenance)
+</file>
+
+<file path="etl/graph_builder/doc_consumer.py">
+# etl/graph_builder/doc_consumer.py
+# This file consumes Documentation events to link text to the architecture graph.
+from backend.domain.events.ingestion import DocumentationUpdatedEvent, ADRCreated, DocumentationLinkedEvent
+from backend.graph.mutation_service import GraphMutationService
+from etl.graph_builder.telemetry import with_graph_telemetry
+class DocGraphConsumer:
+    def __init__(self, mutation_service: GraphMutationService) -> None:
+        self.mutation_service = mutation_service
+    @with_graph_telemetry("consume_documentation_updated")
+    async def handle_documentation_updated(self, event: DocumentationUpdatedEvent) -> None:
+        """Translates DocumentationUpdated into Document nodes."""
+        node_id = f"doc:{event.data.document_url}"
+        name = getattr(event.data, "title", "Untitled Document")
+        self.mutation_service.upsert_node(
+            "Document", 
+            {"node_id": node_id, "name": name, "type": event.data.document_type}
+        )
+    @with_graph_telemetry("consume_adr_created")
+    async def handle_adr_created(self, event: ADRCreated) -> None:
+        """Translates ADRCreated into ADR nodes."""
+        node_id = f"adr:{event.repository}:{event.file_path}"
+        name = event.metadata.get("title", "Untitled ADR") if event.metadata else "Untitled ADR"
+        self.mutation_service.upsert_node(
+            "ADR", 
+            {
+                "node_id": node_id, 
+                "name": name, 
+                "status": event.status or "Unknown", 
+                "decision": event.decision or ""
+            }
+        )
+    @with_graph_telemetry("consume_documentation_linked")
+    async def handle_documentation_linked(self, event: DocumentationLinkedEvent) -> None:
+        """Creates the DOCUMENTS edge between the Document and the structural Node."""
+        provenance = {
+            "source_system": event.source,
+            "source_uri": event.data.doc_id,
+            "timestamp": str(event.time),
+            "confidence": event.data.confidence
+        }
+        self.mutation_service.upsert_edge(
+            event.data.doc_id,
+            event.data.node_id,
+            "DOCUMENTS",
+            provenance
+        )
+</file>
+
+<file path="etl/graph_builder/routers.py">
+# etl/graph_builder/routers.py
+# Registers the Graph Builder consumers with the Event Bus (Kafka/Redis).
+from backend.core.events.consumer import EventConsumer
+from etl.graph_builder.code_consumer import CodeGraphConsumer
+from etl.graph_builder.doc_consumer import DocGraphConsumer
+from backend.graph.mutation_service import GraphMutationService
+def register_graph_consumers(
+    code_consumer: EventConsumer, 
+    doc_consumer: EventConsumer, 
+    mutation_service: GraphMutationService
+) -> None:
+    """Maps Kafka event types to the Graph Consumer methods."""
+    code_graph_handler = CodeGraphConsumer(mutation_service)
+    doc_graph_handler = DocGraphConsumer(mutation_service)
+    # Map Code/AST Events (US-6.3)
+    code_consumer.register("EntityExtracted", code_graph_handler.handle_entity_extracted)
+    code_consumer.register("DependencyDetected", code_graph_handler.handle_dependency_detected)
+    # Map Documentation Events (US-6.4)
+    doc_consumer.register("DocumentationUpdated", doc_graph_handler.handle_documentation_updated)
+    doc_consumer.register("ADRCreated", doc_graph_handler.handle_adr_created)
+    doc_consumer.register("DocumentationLinked", doc_graph_handler.handle_documentation_linked)
+</file>
+
+<file path="etl/graph_builder/telemetry.py">
+# etl/graph_builder/telemetry.py
+# This file provides OpenTelemetry span decorators specifically for Graph writes.
+from functools import wraps
+from typing import Any, Callable, TypeVar, cast
+from opentelemetry import trace
+tracer = trace.get_tracer(__name__)
+F = TypeVar('F', bound=Callable[..., Any])
+def with_graph_telemetry(span_name: str) -> Callable[[F], F]:
+    """Wraps consumer methods with OpenTelemetry spans for tracing DB writes."""
+    def decorator(func: F) -> F:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with tracer.start_as_current_span(span_name) as span:
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    span.record_exception(e)
+                    raise
+        return cast(F, wrapper)
+    return decorator
+</file>
+
+<file path=".github/workflows/ci.yml">
+# .github/workflows/ci.yml
+# This file defines the CI pipeline for CodeGraph repository.
+name: CodeGraph CI
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+jobs:
+  quality-and-build:
+    name: Code Quality & Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Install uv (with caching)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Install Dependencies
+        run: uv sync --frozen
+      - name: Run Ruff (Linting)
+        run: uv run ruff check .
+      - name: Run Mypy (Type Checking)
+        run: uv run mypy .
+      - name: Run Pytest (Unit Tests)
+        run: uv run pytest
+      - name: Test Docker Build
+        run: docker-compose build web
+</file>
+
+<file path="backend/api/dependencies/auth.py">
+# backend/api/dependencies/auth.py
+# This file contains authentication dependencies, including GitHub webhook HMAC verification.
+import hashlib
+import hmac
+from fastapi import HTTPException, Request
+from backend.core.config import settings
+def verify_github_signature(payload_body: bytes, signature_header: str, secret: str) -> bool:
+    """Verifies the HMAC SHA-256 signature from GitHub webhooks."""
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    hash_object = hmac.new(secret.encode("utf-8"), msg=payload_body, digestmod=hashlib.sha256)
+    expected_signature = "sha256=" + hash_object.hexdigest()
+    return hmac.compare_digest(expected_signature, signature_header)
+async def validate_github_webhook(request: Request) -> bytes:
+    """FastAPI Dependency to validate incoming GitHub Webhooks."""
+    payload = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    secret = settings.GITHUB_WEBHOOK_SECRET.get_secret_value()
+    if not verify_github_signature(payload, signature, secret):
+        raise HTTPException(status_code=401, detail="Invalid GitHub Webhook Signature")
+    return payload
+</file>
+
+<file path="backend/api/middleware/logging_middleware.py">
+# backend/api/middleware/logging_middleware.py
+# This file defines the FastAPI middleware that tracks request lifecycles.
+import uuid
+from typing import Any
+import structlog
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        # AC 2: Generate unique request_id
+        request_id = str(uuid.uuid4())
+        # AC 3: Bind request_id to the structlog context variables for this asyncio task
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            client_ip=request.client.host if request.client else "unknown",
+        )
+        # Mask authorization header if logging incoming headers directly (AC 4)
+        logger = structlog.get_logger("api.request")
+        logger.info("http_request_started")
+        response = await call_next(request)
+        # Inject into response header
+        response.headers["X-Request-ID"] = request_id
+        logger.info("http_request_completed", status_code=response.status_code)
+        return response
+</file>
+
+<file path="backend/api/middleware/metrics_middleware.py">
+# backend/api/middleware/metrics_middleware.py
+#
+# This file defines the FastAPI middleware for tracking HTTP Prometheus metrics.
+import time
+from collections.abc import Awaitable, Callable
+from fastapi import Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+from backend.core.metrics import HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_TOTAL
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        method = request.method
+        path = request.url.path
+        start_time = time.time()
+        status_code = "500"
+        try:
+            response = await call_next(request)
+            status_code = str(response.status_code)
+            return response
+        finally:
+            duration = time.time() - start_time
+            # Increment Counter
+            HTTP_REQUESTS_TOTAL.labels(method=method, path=path, status_code=status_code).inc()
+            # Observe Latency Histogram
+            HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(duration)
+</file>
+
+<file path="backend/api/routers/health.py">
+# backend/api/routers/health.py
+# This file defines the health check endpoint for the FastAPI application. It checks
+# the connectivity of the Neo4j and PostgreSQL databases and returns a JSON response
+# indicating the status of the application and its dependencies.
+from typing import Any
+from fastapi import APIRouter, HTTPException
+from backend.infrastructure.db import verify_neo4j_connection, verify_postgres_connection
+router = APIRouter()
+@router.get("/health")
+def health_check() -> dict[str, Any]:
+    neo4j_ok = verify_neo4j_connection()
+    pg_ok = verify_postgres_connection()
+    status = "ok" if neo4j_ok and pg_ok else "error"
+    response = {
+        "status": status,
+        "databases": {
+            "neo4j": "connected" if neo4j_ok else "disconnected",
+            "postgres": "connected" if pg_ok else "disconnected",
+        },
+    }
+    if status == "error":
+        raise HTTPException(status_code=503, detail=response)
+    return response
+</file>
+
+<file path="backend/api/routers/system.py">
+# backend/api/routers/system.py
+#
+# This file defines system-level endpoints such as health checks and metrics.
+from fastapi import APIRouter
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
+router = APIRouter(tags=["System"])
+@router.get("/metrics")
+async def get_metrics() -> Response:
+    """AC 1: Expose Prometheus metrics in the standard text format."""
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+</file>
+
+<file path="backend/api/routers/webhooks.py">
+# backend/api/routers/webhooks.py
+# This file exposes endpoints to receive events from external systems like GitHub.
+import json
+from typing import Any
+from fastapi import APIRouter, Depends, Request
+from backend.api.dependencies.auth import validate_github_webhook
+router = APIRouter(prefix="/api/v1/webhooks", tags=["Webhooks"])
+@router.post("/github", status_code=202)
+async def github_webhook(
+    request: Request, payload: bytes = Depends(validate_github_webhook)
+) -> dict[str, str]:
+    """Receives GitHub webhooks and enqueues ingestion tasks."""
+    event_type = request.headers.get("X-GitHub-Event")
+    data: dict[str, Any] = json.loads(payload)
+    if event_type == "push":
+        # Extract payload safely
+        repo_data = data.get("repository", {})
+        clone_url = repo_data.get("clone_url")
+        repo_id = repo_data.get("id")
+        ref = data.get("ref", "")
+        if clone_url and repo_id:
+            # Enqueue the background clone job via ARQ
+            redis_pool = getattr(request.app.state, "redis", None)
+            if redis_pool:
+                await redis_pool.enqueue_job("clone_repository_task", clone_url, repo_id, ref)
+                return {"status": "accepted", "message": "Ingestion enqueued"}
+    return {"status": "ignored", "message": "Event not processed"}
+</file>
+
+<file path="backend/api/__init__.py">
+
+</file>
+
+<file path="backend/api/exceptions.py">
+# backend/api/exceptions.py
+# This file defines a global exception handler for the FastAPI application. It catches
+# all unhandled exceptions and returns a standardized JSON response with a 500 status
+# code.
+import logging
+from fastapi import Request
+from fastapi.responses import JSONResponse
+logger = logging.getLogger(__name__)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catches all unhandled exceptions and returns a strict JSON format."""
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "detail": str(exc)},
+    )
+</file>
+
+<file path="backend/core/events/broker.py">
+# backend/core/events/broker.py
+#
+# This file manages the async connection to the Apache Kafka broker.
+import logging
+from aiokafka import AIOKafkaProducer
+logger = logging.getLogger(__name__)
+class BrokerConnectionError(Exception):
+    """Raised when the broker fails to connect."""
+    pass
+class EventBroker:
+    """
+    Manages the lifecycle and connection state of the event broker (Kafka).
+    To be injected into FastAPI lifespan events and Health check routers.
+    """
+    def __init__(self, bootstrap_servers: str) -> None:
+        self.bootstrap_servers = bootstrap_servers
+        self._producer: AIOKafkaProducer | None = None
+        self._connected: bool = False
+    async def connect(self) -> None:
+        """Initialize the Kafka producer and connect to the broker."""
+        try:
+            logger.info(f"Connecting to event broker at {self.bootstrap_servers}...")
+            self._producer = AIOKafkaProducer(bootstrap_servers=self.bootstrap_servers)
+            await self._producer.start()
+            self._connected = True
+            logger.info("Successfully connected to event broker.")
+        except Exception as e:
+            self._connected = False
+            logger.error(f"Failed to connect to event broker: {str(e)}")
+            raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
+    async def disconnect(self) -> None:
+        """Gracefully shutdown the Kafka producer."""
+        if self._producer and self._connected:
+            logger.info("Disconnecting from event broker...")
+            await self._producer.stop()
+            self._connected = False
+            logger.info("Successfully disconnected from event broker.")
+    def is_connected(self) -> bool:
+        """Return the current connection state for health checks."""
+        return self._connected
+# Global singleton to be attached to FastAPI lifespan
+event_broker = EventBroker(bootstrap_servers="localhost:9092")
+</file>
+
+<file path="backend/core/events/consumer.py">
+# backend/core/events/consumer.py
+#
+# This file implements the EventConsumer, handling event routing,
+# OpenTelemetry context extraction, and Dead Letter Queue (DLQ) mechanics (US-3.3, US-3.4).
+import json
+import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
+from aiokafka import AIOKafkaConsumer
+from opentelemetry import propagate, trace
+from backend.core.events.broker import EventBroker
+from backend.domain.events.base import CodeGraphEvent
+logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
+# Type alias for our asynchronous event handler functions
+EventHandler = Callable[[Any], Awaitable[None]]
+class EventConsumer:
+    """
+    Consumes events from a Kafka topic, routes them to registered handlers,
+    and manages exceptions by routing failed messages to a DLQ.
+    """
+    def __init__(
+        self,
+        broker: EventBroker,
+        topic: str,
+        group_id: str,
+        parser: Callable[[dict[str, Any]], CodeGraphEvent[Any]],
+    ) -> None:
+        self.broker = broker
+        self.topic = topic
+        self.group_id = group_id
+        self.parser = parser
+        self.handlers: dict[str, EventHandler] = {}
+        self._consumer: AIOKafkaConsumer | None = None
+    def register(self, event_type: str, handler: EventHandler) -> None:
+        """Register an async function to handle a specific event type."""
+        self.handlers[event_type] = handler
+    async def start(self) -> None:
+        """Starts the Kafka consumer loop (Requires actual Kafka connection)."""
+        logger.info(f"Starting consumer for {self.topic} (Group: {self.group_id})")
+        self._consumer = AIOKafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.broker.bootstrap_servers,
+            group_id=self.group_id,
+            enable_auto_commit=False,
+        )
+        await self._consumer.start()
+        try:
+            async for msg in self._consumer:
+                await self.process_message(msg)
+                await self._consumer.commit()
+        finally:
+            await self._consumer.stop()
+    async def process_message(self, msg: Any) -> None:
+        """
+        Core logic to extract trace context, parse JSON, route to handler,
+        and manage DLQ fallbacks. Segregated from start() for strict unit testing.
+        """
+        # US-3.3 AC3: Extract OTel Context from headers
+        carrier = (
+            {k: v.decode("utf-8") for k, v in msg.headers} if getattr(msg, "headers", None) else {}
+        )
+        ctx = propagate.extract(carrier)
+        with tracer.start_as_current_span(f"consume_{self.topic}", context=ctx) as span:
+            event_id = "unknown"
+            raw_payload = msg.value.decode("utf-8") if isinstance(msg.value, bytes) else ""
+            try:
+                # 1. Parse payload
+                payload_dict = json.loads(raw_payload)
+                event_id = payload_dict.get("id", "unknown")
+                event = self.parser(payload_dict)
+                span.set_attribute("event.id", str(event.id))
+                span.set_attribute("event.type", event.type)
+                # 2. Route to Handler
+                handler = self.handlers.get(event.type)
+                if not handler:
+                    logger.warning(f"No handler registered for event type: {event.type}")
+                    return
+                await handler(event)
+            except Exception as e:
+                # US-3.4 AC1 & AC2: Unhandled exception -> Log -> Send to DLQ
+                span.record_exception(e)
+                logger.error(
+                    "Consumer exception handling message. Routing to DLQ.",
+                    exc_info=True,
+                    extra={
+                        "topic": self.topic,
+                        "dlq_action": "routed",
+                        "event_id": event_id,
+                        "error": str(e),
+                    },
+                )
+                dlq_topic = f"dlq.{self.topic}"
+                if self.broker._producer:
+                    await self.broker._producer.send_and_wait(
+                        dlq_topic, value=msg.value, headers=getattr(msg, "headers", [])
+                    )
+                else:
+                    logger.critical("Broker producer not initialized! Cannot route to DLQ.")
+</file>
+
+<file path="backend/core/events/publisher.py">
+# backend/core/events/publisher.py
+#
+# This file implements the EventPublisher responsible for serializing CodeGraph events,
+# injecting OpenTelemetry tracing context, and pushing them to Kafka (US-3.3).
+import logging
+from typing import Any
+from opentelemetry import propagate
+from backend.core.events.broker import EventBroker
+from backend.domain.events.base import CodeGraphEvent
+logger = logging.getLogger(__name__)
+class EventPublisher:
+    """Publishes strictly typed CodeGraph events to the message broker."""
+    def __init__(self, broker: EventBroker) -> None:
+        self.broker = broker
+    async def publish(self, topic: str, event: CodeGraphEvent[Any]) -> None:
+        """
+        Serializes a domain event and publishes it to the specified topic,
+        injecting the current distributed trace context into the Kafka headers.
+        """
+        if not self.broker.is_connected() or not self.broker._producer:
+            raise RuntimeError("Cannot publish: Broker is not connected.")
+        # US-3.3 AC3: Inject trace IDs into headers
+        carrier: dict[str, str] = {}
+        propagate.inject(carrier)
+        # Kafka requires headers as List[Tuple[str, bytes]]
+        kafka_headers: list[tuple[str, bytes]] = [
+            (k, v.encode("utf-8")) for k, v in carrier.items()
+        ]
+        payload = event.model_dump_json().encode("utf-8")
+        await self.broker._producer.send_and_wait(topic, value=payload, headers=kafka_headers)
+        logger.info(
+            f"Published event to {topic}",
+            extra={"event_id": str(event.id), "event_type": event.type},
+        )
+</file>
+
+<file path="backend/core/__init__.py">
+
+</file>
+
+<file path="backend/core/ai_telemetry.py">
+# backend/core/ai_telemetry.py
+#
+# This file defines observability wrappers for tracking LLM token usage and latency.
+import time
+from collections.abc import Callable, Coroutine
+from functools import wraps
+from typing import Any
+from opentelemetry import trace
+from backend.core.metrics import LLM_GENERATION_DURATION_SECONDS, LLM_TOKENS_TOTAL
+tracer = trace.get_tracer(__name__)
+# Use modern Python 3.12+ PEP 695 generic syntax
+def track_llm_telemetry[**P, R: dict[str, Any]](
+    func: Callable[P, Coroutine[Any, Any, R]],
+) -> Callable[P, Coroutine[Any, Any, R]]:
+    """
+    Async decorator that wraps AI calls to record OpenTelemetry spans
+    and Prometheus metrics for token usage and model latency.
+    """
+    @wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        # Extract model from kwargs if available, default to "unknown"
+        model = str(kwargs.get("model", "unknown"))
+        start_time = time.time()
+        # AC 1: Create a specialized LLM span
+        with tracer.start_as_current_span("llm_generation") as span:
+            span.set_attribute("llm.model", model)
+            try:
+                response = await func(*args, **kwargs)
+                # AC 4: Safely extract usage data if it exists in the response
+                usage = response.get("usage", {})
+                if isinstance(usage, dict):
+                    prompt_tokens = usage.get("prompt_tokens", 0)
+                    completion_tokens = usage.get("completion_tokens", 0)
+                    # AC 2: Track tokens in Prometheus
+                    LLM_TOKENS_TOTAL.labels(model=model, token_type="prompt").inc(prompt_tokens)
+                    LLM_TOKENS_TOTAL.labels(model=model, token_type="completion").inc(
+                        completion_tokens
+                    )
+                    # Attach token metrics to the distributed trace
+                    span.set_attribute("llm.usage.prompt_tokens", prompt_tokens)
+                    span.set_attribute("llm.usage.completion_tokens", completion_tokens)
+                return response
+            finally:
+                duration = time.time() - start_time
+                # AC 3: Observe latency in Prometheus
+                LLM_GENERATION_DURATION_SECONDS.labels(model=model).observe(duration)
+    return wrapper
+</file>
+
+<file path="backend/core/decorators.py">
+# backend/core/decorators.py
+# This file provides robust resilience wrappers, specifically targeting Neo4j
+# transient deadlocks that occur during concurrent ingestion events.
+import time
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, TypeVar, cast
+from neo4j.exceptions import TransientError
+F = TypeVar("F", bound=Callable[..., Any])
+def with_neo4j_retries(max_retries: int = 3, base_delay: float = 0.5) -> Callable[[F], F]:
+    """
+    Decorator that applies exponential backoff for Neo4j TransientErrors.
+    Crucial for handling concurrent MERGE deadlocks in asynchronous event consumers.
+    """
+    def decorator(func: F) -> F:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            retries = 0
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except TransientError as e:
+                    retries += 1
+                    if retries > max_retries:
+                        raise e
+                    # Exponential backoff: base_delay * 2^(retry-1)
+                    time.sleep(base_delay * (2 ** (retries - 1)))
+        return cast(F, wrapper)
+    return decorator
+</file>
+
+<file path="backend/core/logger.py">
+# backend/core/logger.py
+# This file configures the enterprise structlog setup and data redaction processors.
+import logging
+import sys
+from collections.abc import MutableMapping
+from typing import Any
+import structlog
+SENSITIVE_KEYS = {"authorization", "api_key", "password", "secret", "token"}
+def redact_sensitive_data(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """Structlog processor to mask sensitive data based on key names."""
+    for key, value in event_dict.items():
+        if key.lower() in SENSITIVE_KEYS:
+            event_dict[key] = "***REDACTED***"
+        elif isinstance(value, dict):
+            # Recursively redact nested dictionaries (e.g., headers)
+            event_dict[key] = redact_sensitive_data(logger, method_name, value.copy())
+    return event_dict
+def setup_logging(stream: Any = sys.stdout) -> None:
+    """Initializes JSON structured logging globally, integrating with standard logging."""
+    # 1. Intercept standard Python logging and route it to our stream (stdout or pytest capsys)
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger = logging.getLogger()
+    # Clear any existing handlers to prevent duplicate logs
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+    # 2. Configure structlog to use standard library logging as its backend
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,  # Pulls request_id from context
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.add_logger_name,  # Safely extracts logger name now
+            structlog.processors.TimeStamper(fmt="iso"),
+            redact_sensitive_data,
+            structlog.processors.JSONRenderer(),  # AC 1: Strictly JSON output
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),  # Connects structlog to stdlib
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+</file>
+
+<file path="backend/core/metrics.py">
+# backend/core/metrics.py
+#
+# This file defines the Prometheus metrics for the application.
+from prometheus_client import Counter, Gauge, Histogram
+# --- Existing Metrics ---
+HTTP_REQUESTS_TOTAL = Counter(
+    "http_requests_total", "Total number of HTTP requests", ["method", "path", "status_code"]
+)
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "http_request_duration_seconds", "HTTP request duration in seconds", ["method", "path"]
+)
+DB_ACTIVE_CONNECTIONS = Gauge("db_active_connections", "Number of active database connections")
+# --- New AI & GraphRAG Telemetry Metrics (US-2.4) ---
+# AC 2: LLM Tokens Counter
+LLM_TOKENS_TOTAL = Counter("llm_tokens_total", "Total LLM tokens used", ["model", "token_type"])
+# AC 3: LLM Generation Latency Histogram
+LLM_GENERATION_DURATION_SECONDS = Histogram(
+    "llm_generation_duration_seconds", "LLM generation latency in seconds", ["model"]
+)
+</file>
+
+<file path="backend/domain/__init__.py">
+
+</file>
+
+<file path="backend/graph/mutation_service.py">
+# backend/graph/mutation_service.py
+# This file defines the GraphMutationService, a centralized abstraction for executing
+# idempotent graph writes (MERGE) while enforcing strict V2 schemas and provenance tracking.
+from typing import Any
+from neo4j import Driver
+from backend.core.decorators import with_neo4j_retries
+class GraphMutationService:
+    # Strict allowance lists to prevent Cypher injection on dynamic labels/edges
+    ALLOWED_LABELS = frozenset(
+        {
+            "Service",
+            "API",
+            "Database",
+            "MessageQueue",  # V1
+            "Repository",
+            "File",
+            "Class",
+            "Function",
+            "Document",
+            "ADR",  # V2
+        }
+    )
+    ALLOWED_EDGES = frozenset(
+        {
+            "CALLS",
+            "EXPOSES",
+            "READS",
+            "WRITES",
+            "PUBLISHES",
+            "SUBSCRIBES_TO",  # V1
+            "CONTAINS",
+            "IMPLEMENTS",
+            "DOCUMENTS",
+            "DEPENDS_ON",
+            "IMPORTS",  # V2
+        }
+    )
+    def __init__(self, driver: Driver) -> None:
+        self.driver = driver
+    @with_neo4j_retries(max_retries=3, base_delay=0.5)
+    def upsert_node(self, label: str, properties: dict[str, Any]) -> None:
+        """
+        Idempotently inserts or updates a Node.
+        """
+        if label not in self.ALLOWED_LABELS:
+            raise ValueError(f"Invalid node label: {label}")
+        if "node_id" not in properties:
+            raise ValueError("node_id is required property for all graph nodes.")
+        # Cypher parameters ($props) protect against injection for properties.
+        # F-strings are used for Labels because Neo4j does not support parameterized labels.
+        query = f"""
+        MERGE (n:{label} {{node_id: $props.node_id}})
+        SET n += $props
+        """
+        with self.driver.session() as session:
+            session.run(query, props=properties)
+    @with_neo4j_retries(max_retries=3, base_delay=0.5)
+    def upsert_edge(
+        self, source_id: str, target_id: str, rel_type: str, properties: dict[str, Any]
+    ) -> None:
+        """
+        Idempotently inserts or updates an Edge between two existing Nodes.
+        Enforces ADR-026 strict source provenance tracking.
+        """
+        if rel_type not in self.ALLOWED_EDGES:
+            raise ValueError(f"Invalid relationship type: {rel_type}")
+        required_provenance = {"source_system", "source_uri", "timestamp"}
+        missing = required_provenance - properties.keys()
+        if missing:
+            raise ValueError(f"Missing provenance properties: {missing}. Required per ADR-026.")
+        query = f"""
+        MATCH (a {{node_id: $source_id}})
+        MATCH (b {{node_id: $target_id}})
+        MERGE (a)-[r:{rel_type}]->(b)
+        SET r += $props
+        """
+        with self.driver.session() as session:
+            session.run(query, source_id=source_id, target_id=target_id, props=properties)
+</file>
+
+<file path="backend/infrastructure/__init__.py">
+
+</file>
+
+<file path="backend/services/parsers/base.py">
+# backend/services/parsers/base.py
+# Defines the abstract base class for all language-specific AST parsers.
+from abc import ABC, abstractmethod
+from backend.models.events import EntityExtracted, RelationshipExtracted
+class BaseASTParser(ABC):
+    @abstractmethod
+    def parse(
+        self, source_code: bytes, repo_id: int, file_path: str
+    ) -> tuple[list[EntityExtracted], list[RelationshipExtracted]]:
+        """Parses source code and returns structural entities and relationships."""
+        pass
+</file>
+
+<file path="backend/services/parsers/factory.py">
+# backend/services/parsers/factory.py
+# Routes discovered files to the correct AST or Manifest parser and publishes events.
+import os
+from typing import Any
+from backend.core.config import settings
+from backend.core.events.broker import EventBroker
+from backend.core.events.publisher import EventPublisher
+from backend.models.events import (
+    FileDiscovered,
+)
+from backend.services.parsers.manifest_parser import ManifestParser
+from backend.services.parsers.python_parser import PythonParser
+# Initialize parsers globally to avoid reloading grammars
+_PY_PARSER = PythonParser()
+_MANIFEST_PARSER = ManifestParser()
+# Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
+_broker = EventBroker(settings.REDIS_URL)
+_EVENT_BUS = EventPublisher(_broker)
+async def publish_event(event: Any) -> None:
+    """
+    Serializes the Pydantic event and pushes it to the Epic 3 Event Bus.
+    """
+    # Determine the correct topic based on the event type
+    topic = "events.knowledge.extracted"
+    # Serialize the Pydantic model to JSON bytes
+    payload = event.model_dump_json().encode("utf-8")
+    # Publish to the durable Event Bus
+    await _EVENT_BUS.publish(topic, payload)
+async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
+    """
+    Reads the file from disk, parses its AST or Manifest, and emits structural events.
+    """
+    full_path = os.path.join(clone_dir, event.file_path)
+    if not os.path.exists(full_path):
+        return
+    try:
+        # Move the open() inside the try block to safely handle read errors
+        with open(full_path, "rb") as f:
+            source_code = f.read()
+        # 1. Process Package Manifests (US-4.4)
+        if event.file_path.endswith(("requirements.txt", "package.json")):
+            deps = _MANIFEST_PARSER.parse_manifest(
+                source_code, event.repository_id, event.file_path
+            )
+            for dep in deps:
+                await publish_event(dep)
+        # 2. Process Python ASTs (US-4.3 & US-4.4)
+        elif event.language in ("py", "python"):
+            entities, relationships = _PY_PARSER.parse(
+                source_code, event.repository_id, event.file_path
+            )
+            for ent in entities:
+                await publish_event(ent)
+            for rel in relationships:
+                await publish_event(rel)
+    except Exception:
+        # Resilient processing: Ignore malformed files or read errors, proceed to the next
+        pass
+</file>
+
+<file path="backend/services/parsers/manifest_parser.py">
+# backend/services/parsers/manifest_parser.py
+# Parses application manifests (requirements.txt, package.json) for dependencies.
+import json
+import re
+from backend.models.events import DependencyDetected
+class ManifestParser:
+    def parse_manifest(
+        self, content: bytes, repo_id: int, file_path: str
+    ) -> list[DependencyDetected]:
+        text = content.decode("utf-8", errors="ignore")
+        dependencies: list[DependencyDetected] = []
+        if file_path.endswith("requirements.txt"):
+            for line in text.splitlines():
+                line = line.split("#")[0].strip()
+                if not line:
+                    continue
+                # Match package name and version constraints (e.g. fastapi==0.100.0)
+                match = re.match(r"^([a-zA-Z0-9_\-]+)([=><~^]+.*)?$", line)
+                if match:
+                    pkg_name = match.group(1)
+                    constraint = match.group(2) if match.group(2) else None
+                    dependencies.append(
+                        DependencyDetected(
+                            repository_id=repo_id,
+                            file_path=file_path,
+                            package_name=pkg_name,
+                            version_constraint=constraint,
+                        )
+                    )
+        elif file_path.endswith("package.json"):
+            try:
+                data = json.loads(text)
+                for key in ["dependencies", "devDependencies"]:
+                    if key in data:
+                        for pkg, ver in data[key].items():
+                            dependencies.append(
+                                DependencyDetected(
+                                    repository_id=repo_id,
+                                    file_path=file_path,
+                                    package_name=pkg,
+                                    version_constraint=ver,
+                                )
+                            )
+            except json.JSONDecodeError:
+                pass
+        return dependencies
+</file>
+
+<file path="backend/services/parsers/python_parser.py">
+# backend/services/parsers/python_parser.py
+#
+# Implements resilient Tree-sitter AST extraction for Python files using DFS traversal.
+from typing import Any
+import tree_sitter_python as tspy
+from tree_sitter import Language, Parser
+from backend.models.events import EntityExtracted, RelationshipExtracted
+from backend.services.parsers.base import BaseASTParser
+class PythonParser(BaseASTParser):
+    def __init__(self) -> None:
+        self.language = Language(tspy.language())
+        self.parser = Parser(self.language)
+        # Bypassing the volatile Query API in favor of stable AST traversal
+    def parse(
+        self, source_code: bytes, repo_id: int, file_path: str
+    ) -> tuple[list[EntityExtracted], list[RelationshipExtracted]]:
+        tree = self.parser.parse(source_code)
+        entities: list[EntityExtracted] = []
+        relationships: list[RelationshipExtracted] = []
+        def traverse(node: Any) -> None:
+            # 1. Extract Classes
+            if node.type == "class_definition":
+                for child in node.children:
+                    if child.type == "identifier":
+                        text = child.text.decode("utf-8") if child.text else ""
+                        entities.append(
+                            EntityExtracted(
+                                repository_id=repo_id,
+                                file_path=file_path,
+                                entity_type="Class",
+                                name=text,
+                            )
+                        )
+                        break
+            # 2. Extract Functions
+            elif node.type == "function_definition":
+                for child in node.children:
+                    if child.type == "identifier":
+                        text = child.text.decode("utf-8") if child.text else ""
+                        entities.append(
+                            EntityExtracted(
+                                repository_id=repo_id,
+                                file_path=file_path,
+                                entity_type="Function",
+                                name=text,
+                            )
+                        )
+                        break
+            # 3. Extract Standard Imports (e.g., import os, sys)
+            elif node.type == "import_statement":
+                def extract_dotted(n: Any) -> None:
+                    if n.type == "dotted_name":
+                        text = n.text.decode("utf-8") if n.text else ""
+                        relationships.append(
+                            RelationshipExtracted(
+                                repository_id=repo_id,
+                                source_file=file_path,
+                                target_module=text,
+                                relationship_type="IMPORTS",
+                            )
+                        )
+                    else:
+                        for c in n.children:
+                            extract_dotted(c)
+                extract_dotted(node)
+            # 4. Extract From Imports (e.g., from backend.models import User)
+            elif node.type == "import_from_statement":
+                for child in node.children:
+                    if child.type == "dotted_name":
+                        text = child.text.decode("utf-8") if child.text else ""
+                        relationships.append(
+                            RelationshipExtracted(
+                                repository_id=repo_id,
+                                source_file=file_path,
+                                target_module=text,
+                                relationship_type="IMPORTS",
+                            )
+                        )
+                        break  # Only grab the module name, ignore the imported objects
+            # Continue deep search
+            for child in node.children:
+                traverse(child)
+        # Trigger the DFS traversal
+        traverse(tree.root_node)
+        return entities, relationships
+</file>
+
+<file path="backend/services/__init__.py">
+
+</file>
+
+<file path="backend/services/file_traversal.py">
+# backend/services/file_traversal.py
+# This file handles the local file system traversal of cloned repositories.
+import os
+from collections.abc import Iterator
+from typing import Any
+import pathspec
+# Standard enterprise ignore patterns
+GLOBAL_IGNORES = [".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build"]
+VALID_EXTENSIONS = {".py", ".ts", ".js", ".java", ".go", ".md"}
+def get_gitignore_spec(repo_path: str) -> pathspec.PathSpec[Any]:
+    """Parses the .gitignore file if it exists."""
+    gitignore_path = os.path.join(repo_path, ".gitignore")
+    patterns = GLOBAL_IGNORES.copy()
+    if os.path.exists(gitignore_path):
+        with open(gitignore_path, encoding="utf-8") as f:
+            patterns.extend(f.read().splitlines())
+    return pathspec.PathSpec.from_lines("gitignore", patterns)
+def traverse_repository(repo_path: str) -> Iterator[str]:
+    """Walks the directory yielding valid source files respecting ignores."""
+    spec = get_gitignore_spec(repo_path)
+    for root, dirs, files in os.walk(repo_path):
+        # Relativize path for pathspec evaluation
+        rel_root = os.path.relpath(root, repo_path)
+        if rel_root == ".":
+            rel_root = ""
+        # Modify dirs in-place to prune ignored directories (stops os.walk from descending)
+        dirs[:] = [d for d in dirs if not spec.match_file(os.path.join(rel_root, d))]
+        for file in files:
+            rel_file_path = os.path.join(rel_root, file)
+            _, ext = os.path.splitext(file)
+            if ext in VALID_EXTENSIONS and not spec.match_file(rel_file_path):
+                yield os.path.join(repo_path, rel_file_path)
+</file>
+
+<file path="backend/services/github_auth.py">
+# backend/services/github_auth.py
+# This file handles secure authentication as a GitHub App installation.
+import time
+import jwt
+from backend.core.config import settings
+def generate_github_app_jwt() -> str:
+    """
+    Generates a short-lived JWT to authenticate as the GitHub App.
+    Used to dynamically fetch Installation Access Tokens for cloning.
+    """
+    app_id = settings.GITHUB_APP_ID
+    private_key = None
+    if settings.GITHUB_PRIVATE_KEY:
+        private_key = settings.GITHUB_PRIVATE_KEY.get_secret_value()
+    if not app_id or not private_key:
+        raise ValueError(
+            "GitHub App credentials are not fully configured in environment variables."
+        )
+    now = int(time.time())
+    payload = {
+        "iat": now - 60,  # Issued at time (60 seconds in the past for clock drift)
+        "exp": now + (10 * 60),  # Expiration time (Maximum 10 minutes)
+        "iss": app_id,  # GitHub App ID
+    }
+    # Generate the JWT using RS256 as required by GitHub API
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    return encoded_jwt
+</file>
+
+<file path="backend/__init__.py">
+
+</file>
+
+<file path="docs/adr/ADRs.md">
+# CodeGraph Architecture Decision Records (ADRs)
+
+## Table of Contents
+
+- [ADR-001: API Framework & Application Architecture](#adr-001-api-framework--application-architecture)
+- [ADR-002: Dependency Management & Local Orchestration](#adr-002-dependency-management--local-orchestration)
+- [ADR-004: Observability Stack Selection](#adr-004-observability-stack-selection)
+- [ADR-005: Logging Standards & Structure](#adr-005-logging-standards--structure)
+- [ADR-007: Entity Resolution Lookup Strategy](#adr-007-entity-resolution-lookup-strategy)
+- [ADR-008: Documentation Connector Pattern (Push vs. Pull)](#adr-008-documentation-connector-pattern-push-vs-pull)
+- [ADR-009: Document-to-Entity Resolution Strategy](#adr-009-document-to-entity-resolution-strategy)
+- [ADR-011: Event Broker Selection](#adr-011-event-broker-selection)
+- [ADR-012: Engineering Event Model](#adr-012-engineering-event-model)
+- [ADR-021: Repository Ingestion & Code Access Strategy](#adr-021-repository-ingestion--code-access-strategy)
+- [ADR-024: Knowledge Graph Ingestion Strategy](#adr-024-knowledge-graph-ingestion-strategy)
+- [ADR-025: V2 Graph Ontology Expansion](#adr-025-v2-graph-ontology-expansion)
+- [ADR-026: Graph Source Provenance Tracking](#adr-026-graph-source-provenance-tracking)
+
+---
+
+## ADR-001: API Framework & Application Architecture
+
+### Context
+
+CodeGraph requires a highly performant backend to handle concurrent graph traversals, vector similarity searches, and streaming LLM responses. The codebase will grow rapidly as we add connectors for GitHub, Confluence, and Jira. If we do not impose strict structural boundaries early, the AI logic, database queries, and routing will become a tangled monolith.
+
+### Options Considered
+
+1. **Django:** Excellent ORM, but too heavy, synchronous by default, and its ORM is not designed for Graph database (Neo4j) traversals.
+2. **Flask:** Lightweight, but lacks built-in asynchronous support and strict data validation.
+3. **FastAPI + Clean Architecture:** Native async, Pydantic validation, auto-generated OpenAPI docs, and easily structured into decoupled layers.
+
+### Decision
+
+We will use **FastAPI** with **Pydantic v2** as the core web framework.
+Furthermore, we will strictly enforce **Clean Architecture** (or Hexagonal Architecture) directory structures:
+
+* `api/`: Controllers, FastAPI routers, and HTTP request/response models.
+* `domain/`: Pure business logic, core Pydantic entities (e.g., `Node`, `Edge`, `ImpactReport`).
+* `services/`: Orchestration layer (e.g., `ImpactAnalysisService`).
+* `infrastructure/`: Database connections (Neo4j, pgvector), LLM clients, and external API connectors.
+
+### Consequences
+
+* **Positive:** Complete decoupling of business logic from the HTTP layer. If we later switch from REST to gRPC or GraphQL, the domain logic remains untouched. OpenAPI documentation is generated for free.
+* **Negative:** Higher initial boilerplate compared to a simple script. Developers must understand dependency injection to map interfaces in the `infrastructure` layer to the `services` layer.
+
+---
+
+## ADR-002: Dependency Management & Local Orchestration
+
+### Context
+
+Enterprise AI platforms require complex local setups. Developers will need PostgreSQL (with pgvector), Neo4j (with APOC algorithms), and Python running simultaneously. Furthermore, Python dependency hell is a notorious productivity killer in AI engineering.
+
+### Options Considered (Python)
+
+1. `pip` + `requirements.txt`: Too fragile, no lockfile, slow resolution.
+2. `Poetry`: Standard modern choice, great lockfile, but relatively slow resolution times.
+3. `uv` (by Astral): Rust-based drop-in replacement for pip/pip-tools. Blazing fast, strict lockfiles, and handles Python version management automatically.
+
+### Decision
+
+1. **Python Management:** We will use **`uv`** for all Python dependency management and virtual environment creation.
+2. **Local Orchestration:** We will use **Docker Compose** to manage the local datastore stack. The API can be run locally on bare metal (for easier debugging) while connecting to the containerized databases, or the entire stack can be spun up via Docker.
+
+### Consequences
+
+* **Positive:** `uv` will cut CI/CD build times by minutes compared to Poetry. Docker Compose ensures a developer can run `docker-compose up -d` and instantly have a fully configured Neo4j and Postgres instance ready for code ingestion.
+* **Negative:** Developers unfamiliar with `uv` will need a brief onboarding (which we will cover in the `README.md`).
+
+---
+
+## ADR-004: Observability Stack Selection
+
+### Context
+
+CodeGraph processes multi-stage pipelines: receiving a request in FastAPI, traversing a Neo4j Knowledge Graph, retrieving vector embeddings from pgvector, and assembling context for an external LLM. To maintain enterprise-grade reliability, we must monitor the latency and success rate of each individual hop.
+
+### Problem
+
+We need a telemetry solution (tracing and metrics) that provides immediate value during local development but can seamlessly transition to enterprise observability platforms (like Datadog, Splunk, or New Relic) in production without requiring a massive code rewrite.
+
+### Options Considered
+
+1. **Vendor-Specific SDKs (e.g., `ddtrace` for Datadog):** Powerful, but creates vendor lock-in and is difficult to run completely locally without cloud accounts.
+2. **Custom Python Decorators & Logging:** Easy to implement, but lacks distributed tracing standards and visualization UIs.
+3. **OpenTelemetry (OTEL):** The CNCF industry standard for vendor-agnostic instrumentation.
+
+### Decision
+
+We will adopt **OpenTelemetry (OTEL)** as our standard instrumentation framework.
+
+* **Instrumentation:** We will use `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-sqlalchemy`, and custom spans for the Neo4j driver and LLM calls.
+* **Local Development Stack:** We will deploy **Jaeger** (for distributed tracing) and **Prometheus** (for metrics) alongside our Postgres and Neo4j containers in Docker Compose.
+* **Production Stack:** We will configure the OTEL Exporter to route telemetry to whichever enterprise backend the organization chooses (via OTLP).
+
+### Consequences
+
+* **Positive:** Zero vendor lock-in. Engineers get a beautiful, visual flame-graph of request latency in local development (via Jaeger) to debug GraphRAG bottlenecks.
+* **Negative:** OTEL has a slightly steeper learning curve than standard decorators, and improper span creation can introduce minor performance overhead.
+
+### Future Evolution
+
+As we implement the Event-Driven Pipeline (Phase 1, Epic 3), we will extend OTEL to trace asynchronous events (e.g., Kafka/RabbitMQ messages) to track a webhook from ingestion all the way to Graph update.
+
+---
+
+## ADR-005: Logging Standards & Structure
+
+### Context
+
+FastAPI and Uvicorn default to unstructured, plain-text logging. In a distributed engineering intelligence platform, text logs are nearly impossible to query effectively at scale. Furthermore, our platform ingests proprietary source code and architectural data, raising significant data privacy concerns.
+
+### Problem
+
+We must enforce a unified logging format that is machine-readable, traceable across distributed boundaries, and secure against accidental leakage of sensitive engineering assets (like API keys in code or raw LLM prompts).
+
+### Options Considered
+
+1. **Python Standard `logging` (JSON formatter):** Native, but requires heavy boilerplate to inject contextual data (like `request_id`) into every log.
+2. **`Loguru`:** Highly readable, great developer experience, but slightly less flexible for strict enterprise JSON schema enforcement.
+3. **`structlog`:** Industry standard for structured, contextual JSON logging in Python.
+
+### Decision
+
+We will implement **`structlog`** as the exclusive logging library for CodeGraph.
+
+* **Schema:** Every log emitted will be strict JSON containing at minimum: `timestamp`, `level`, `service_name`, `request_id`, `event` (the message), and `duration` (if applicable).
+* **Traceability:** We will implement a FastAPI middleware to generate a UUID `request_id` for every incoming HTTP request. `structlog` will automatically bind this ID to all logs generated during that request lifecycle.
+* **Redaction:** We will configure a `structlog` processor to automatically scrub sensitive fields (e.g., `Authorization` headers, `llm_prompt_text` if not in debug mode) before the log is written.
+
+### Consequences
+
+* **Positive:** Logs can be instantly ingested and parsed by ELK, Datadog, or AWS CloudWatch. Searching for `request_id="abc-123"` will yield the exact lifecycle of a request, from API entry to Graph query to LLM response.
+* **Negative:** Engineers must break the habit of using standard `print()` or `logging.info()`. We must enforce this via CI/CD linting (Ruff).
+
+### Future Evolution
+
+We will eventually expose an API endpoint to dynamically toggle the log level (e.g., from `INFO` to `DEBUG`) at runtime without restarting the application, allowing real-time debugging of production ingestion errors.
+
+---
+
+## ADR-007: Entity Resolution Lookup Strategy
+
+### Context
+
+During documentation ingestion, the platform must match textual references (e.g., "AuthService") to explicit nodes in the Knowledge Graph to create structural links.
+
+### Problem
+
+Should we maintain an intermediate cache (e.g., Redis) of all known graph entities for fast regex matching, or query the graph database directly as documents flow through the pipeline?
+
+### Options Considered
+
+1. Maintain an in-memory or Redis-based alias cache updated by `EntityExtracted` events.
+2. **Query Neo4j directly during the ingestion stream.**
+
+### Decision
+
+We will query Neo4j directly.
+
+### Consequences
+
+* *Pros:* Eliminates cache invalidation bugs. Guarantees that documentation is only linked to entities that successfully exist in the persistence layer at that exact millisecond. Reduces infrastructure complexity by removing Redis from the MVP stack.
+* *Cons:* Increases read I/O on Neo4j during large documentation syncs.
+
+### Future Evolution
+
+If Neo4j read latency becomes a bottleneck during enterprise-scale ingestion (e.g., parsing 10,000 Confluence pages simultaneously), we will introduce a read-through Redis cache.
+
+---
+
+## ADR-008: Documentation Connector Pattern (Push vs. Pull)
+
+### Context
+
+CodeGraph needs to ingest documentation from tightly coupled sources (in-repo Markdown) and external sources (Atlassian Confluence).
+
+### Problem
+
+In-repo documentation can be event-driven (triggered by GitHub webhooks), whereas external systems like Confluence often lack reliable enterprise webhooks or require complex firewall traversals, making real-time push difficult.
+
+### Options Considered
+
+1. Force all platforms to push events via webhooks.
+2. Use a purely scheduled polling (pull) mechanism for all documentation.
+3. **Hybrid Approach:** Event-driven for in-repo (push), and Scheduled Incremental Sync for external APIs (pull), normalizing both into a unified internal Event Data Model.
+
+### Decision
+
+We will use the Hybrid Approach. External connectors will implement an `IncrementalSync` interface that polls for changes since the last `Timestamp`, converting results into standard CodeGraph events (`DocumentationUpdated`).
+
+### Consequences
+
+* *Pros:* Maximizes real-time updates for code-adjacent docs while respecting the realities of third-party API rate limits.
+* *Cons:* Requires building a scheduling mechanism (e.g., Celery/APScheduler) for the pull-based connectors.
+
+### Future Evolution
+
+As the Plugin Framework (Epic 16) matures, this Incremental Sync interface will become the standard SDK for future integrations like Jira, Notion, or SharePoint.
+
+---
+
+## ADR-009: Document-to-Entity Resolution Strategy
+
+### Context
+
+Extracting text is insufficient; CodeGraph must link documentation to specific microservices, repositories, or APIs to calculate metrics like "Documentation Freshness".
+
+### Problem
+
+How do we programmatically determine which code component a specific Confluence page or Markdown file is describing?
+
+### Options Considered
+
+1. Rely entirely on the LLM to read the document and guess the associated service (expensive, slow).
+2. **Heuristic-First, AI-Second:** Extract frontmatter tags (e.g., `service: PaymentService`), parse folder structures (e.g., `docs/architecture/`), and use regex matching against known entities. Fall back to LLM semantic matching only if heuristics fail.
+
+### Decision
+
+Implement the Heuristic-First strategy. The ingestion worker will emit a `DocumentationLinked` event when explicit references are found.
+
+### Consequences
+
+* *Pros:* Fast, cheap, and highly accurate for mature teams that use YAML frontmatter or standard ADR templates.
+* *Cons:* Teams with poorly structured documentation will have orphaned docs in the graph until the AI semantic matcher is implemented in Phase 3.
+
+### Future Evolution
+
+We will introduce a "Knowledge Governance" dashboard (Epic 15) to flag unlinked documentation so human architects can manually associate them.
+
+---
+
+## ADR-011: Event Broker Selection
+
+### Context
+
+We need a durable message broker to route events between the ingestion APIs, the ETL workers, and the Neo4j graph builder.
+
+### Options Considered
+
+Redis Streams, RabbitMQ, Apache Kafka.
+
+### Decision
+
+**Apache Kafka** (via `aiokafka`). While heavier, Kafka provides ordered, replayable event logs which is critical for rebuilding historical architecture snapshots without re-querying source systems. (For local dev, we will run a single Kraft-mode Kafka container).
+
+---
+
+## ADR-012: Engineering Event Model
+
+### Context
+
+How do we standardize the schema of events across the platform?
+
+### Decision
+
+We will adopt the **CloudEvents** specification (v1.0) wrapped in strict Pydantic models to ensure cross-language compatibility if we write future plugins in Go or TypeScript.
+
+---
+
+## ADR-021: Repository Ingestion & Code Access Strategy
+
+### Context
+
+To analyze code, CodeGraph needs access to enterprise repositories. We must decide how to fetch and store source code during the ingestion pipeline without overwhelming memory or violating security boundaries.
+
+### Problem
+
+Large enterprise monorepos can be massive (gigabytes). Relying on GitHub API tree fetching is slow and subject to harsh rate limits. Full `git clone` operations include heavy historical `.git` data that we do not need for structural point-in-time parsing.
+
+### Options
+
+1. *GitHub REST/GraphQL API:* Fetch files one by one. (Too slow, high risk of rate-limiting).
+2. *Full Git Clone:* Use `GitPython` to clone the repo to a persistent volume. (Heavy storage overhead, requires stateful workers).
+3. *Ephemeral Shallow Clone:* Execute a shallow, single-branch clone (`git clone --depth 1`) to ephemeral disk storage inside a worker node, process it, and wipe the disk.
+
+
+### Decision
+
+We will use **Ephemeral Shallow Clones** triggered by a background worker queue (e.g., Celery or arq).
+
+### Consequences
+
+* **Pros:** Highly scalable, avoids API rate limits, minimizes storage footprint, stateless workers.
+* **Cons:** Requires file-system access in the worker container; unable to natively traverse historical git blame without additional API calls.
+
+### Future Evolution
+ 
+If we implement deep historical lineage tracking (Epic 14), we may transition to bare clones or incremental fetch strategies.
+
+---
+
+## ADR-024: Knowledge Graph Ingestion Strategy
+
+### Context
+Epics 4 and 5 generate thousands of discrete, asynchronous Kafka events (`EntityExtracted`, `DependencyDetected`, `DocumentationUpdated`). We must insert these into Neo4j without causing race conditions or deadlocks.
+
+### Problem
+Concurrent asynchronous workers attempting to create interconnected nodes (e.g., Worker A creates a `Function` node; Worker B creates a `Class` node containing that function) will crash if the graph operations are not strictly idempotent.
+
+### Options Considered
+* Batch processing via nightly ETL pipelines.
+* Reactive, asynchronous Cypher `MERGE` operations via Kafka consumers.
+* Using an intermediate caching layer (Redis) to lock nodes during updates.
+
+### Decision
+We will use reactive, asynchronous Cypher `MERGE` operations handled by a centralized Graph Mutation Service. We will rely on Neo4j's native transaction management and unique constraints to handle concurrency safely.
+
+### Consequences
+`MERGE` is computationally heavier than `CREATE`. We must ensure strict `IS UNIQUE` constraints on `node_id` exist before any workers are started to prevent full database scans during the `MERGE` operation.
+
+### Future Evolution
+If throughput exceeds Neo4j's write capacity, we will introduce a micro-batching mechanism within the Kafka consumer loop to group `MERGE` statements.
+
+---
+
+## ADR-025: V2 Graph Ontology Expansion
+
+### Context
+Epic 0 established a V1 schema focused purely on high-level architecture (`Service`, `API`, `Database`). We now have low-level code and documentation data flowing from Epics 4 and 5.
+
+### Problem
+We need a standardized way to represent code structures and documentation inside the graph so they can be linked to the V1 architecture nodes.
+
+### Decision
+We will expand the ontology to include new node labels: `Repository`, `File`, `Class`, `Function`, `Document`, and `ADR`. We will introduce structural edges: `CONTAINS` (Repo -> File, File -> Class), `IMPLEMENTS` (Class -> Function), and `DOCUMENTS` (Document -> Service).
+
+### Consequences
+The graph will grow rapidly in density. We must strictly enforce pagination and depth limits on all future Cypher traversal queries to prevent memory explosion.
+
+### Future Evolution
+We will eventually introduce temporal versioning nodes (e.g., `Commit`, `Branch`) in Phase 5 to track schema drift over time.
+
+---
+
+## ADR-026: Graph Source Provenance Tracking
+
+### Context
+In an enterprise, an architectural relationship (e.g., "Service A calls Database B") might be asserted by a parsed Python file, a Markdown document, or an explicitly written ADR.
+
+### Problem
+If conflicting relationships are extracted, or if an edge needs to be invalidated because a file is deleted, the graph must know exactly *where* that edge came from.
+
+### Decision
+Every single edge (relationship) in the Knowledge Graph must contain standard provenance properties: `source_system` (e.g., GitHub, Confluence), `source_uri` (e.g., the file path or URL), `commit_sha` (if applicable), and `timestamp`.
+
+### Consequences
+Storage requirements for relationships will increase. Cypher queries must be written to UPSERT these properties if the edge already exists.
+
+### Future Evolution
+This provenance data will directly power the "Knowledge Confidence Score" calculated in Epic 11.
+</file>
+
+<file path="etl/connectors/confluence/client.py">
+# etl/connectors/confluence/client.py
+# Async HTTP client wrapper specific to Atlassian Confluence Cloud API (US-5.3).
+from typing import Any
+import httpx
+class ConfluenceCloudClient:
+    def __init__(self, base_url: str, email: str, api_token: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.auth = (email, api_token)
+    async def fetch_pages_since(self, iso_timestamp: str) -> list[dict[str, Any]]:
+        """Queries the Confluence v2 API for pages modified since a timestamp."""
+        url = f"{self.base_url}/wiki/api/v2/pages"
+        # CQL to enforce incremental fetch
+        params = {"cql": f"lastModified >= '{iso_timestamp}'", "body-format": "view"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, auth=self.auth, params=params)
+            response.raise_for_status()
+            data = response.json()
+            results: list[dict[str, Any]] = []
+            for item in data.get("results", []):
+                results.append(
+                    {
+                        "id": str(item.get("id")),
+                        "title": str(item.get("title")),
+                        "body": str(item.get("body", {}).get("view", {}).get("value", "")),
+                        "url": f"{self.base_url}/wiki{item.get('_links', {}).get('webui', '')}",
+                    }
+                )
+            return results
+</file>
+
+<file path="etl/connectors/confluence/converter.py">
+# etl/connectors/confluence/converter.py
+# Minimalist HTML/ADF to Markdown converter ensuring core architectural
+# documentation structure is preserved (US-5.3).
+import re
+def html_to_markdown(html: str) -> str:
+    """Converts basic Confluence HTML responses to Markdown."""
+    if not html:
+        return ""
+    text = re.sub(r"<h1>(.*?)</h1>", r"# \1\n\n", html, flags=re.IGNORECASE)
+    text = re.sub(r"<h2>(.*?)</h2>", r"## \1\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<h3>(.*?)</h3>", r"### \1\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<p>(.*?)</p>", r"\1\n\n", text, flags=re.IGNORECASE)
+    # Strip remaining arbitrary HTML tags (scripts, complex macros) for MVP safety
+    text = re.sub(r"<[^>]+>", "", text)
+    return text.strip()
+</file>
+
+<file path="etl/connectors/markdown/__init__.py">
+
+</file>
+
+<file path="etl/connectors/markdown/adr_parser.py">
+# etl/connectors/markdown/adr_parser.py
+# Heuristics and regex extraction for Architecture Decision Records (ADRs)
+# as required by US-5.2.
+import re
+# Matches /docs/adr/, /architecture/decisions/, etc.
+ADR_PATH_PATTERN = re.compile(r"(^|/)(adr|decisions)(/|$)", re.IGNORECASE)
+# Matches '## Status', '### status:', etc. and captures the next line
+STATUS_PATTERN = re.compile(r"#+\s*Status:?\s*\n+([^\n]+)", re.IGNORECASE)
+# Matches '## Decision', and captures everything until the next header or EOF
+DECISION_PATTERN = re.compile(r"#+\s*Decision:?\s*\n+([\s\S]*?)(?=\n#+|$)", re.IGNORECASE)
+def is_adr(path: str) -> bool:
+    """Uses path heuristics to determine if a markdown file is an ADR."""
+    return bool(ADR_PATH_PATTERN.search(path))
+def extract_status(content: str) -> str | None:
+    """Extracts the status block from a MADR document."""
+    match = STATUS_PATTERN.search(content)
+    return match.group(1).strip() if match else None
+def extract_decision(content: str) -> str | None:
+    """Extracts the main decision block from a MADR document."""
+    match = DECISION_PATTERN.search(content)
+    return match.group(1).strip() if match else None
+</file>
+
+<file path="etl/connectors/markdown/parser.py">
+# etl/connectors/markdown/parser.py
+# Utilities for parsing standard Markdown files, extracting YAML frontmatter,
+# and normalizing text as required by US-5.1.
+import re
+from typing import Any
+import yaml
+FRONTMATTER_PATTERN = re.compile(r"^-{3,}\s*\n(.*?)\n-{3,}\s*\n(.*)", re.DOTALL)
+def parse_markdown(content: str) -> tuple[dict[str, Any], str]:
+    """Extracts YAML frontmatter from markdown content."""
+    match = FRONTMATTER_PATTERN.match(content)
+    if not match:
+        return {}, content
+    yaml_text, body = match.groups()
+    try:
+        metadata = yaml.safe_load(yaml_text)
+        if not isinstance(metadata, dict):
+            metadata = {}
+    except yaml.YAMLError:
+        metadata = {}
+    return metadata, body
+def normalize_path(path: str) -> str:
+    """Normalizes Windows paths and removes leading relative indicators."""
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    elif normalized.startswith("/"):
+        normalized = normalized[1:]
+    return normalized
+def strip_invalid_chars(text: str) -> str:
+    """Removes null bytes and control characters (except standard whitespace)."""
+    return re.sub(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]", "", text)
+</file>
+
+<file path="etl/connectors/markdown/worker.py">
+# etl/connectors/markdown/worker.py
+# Orchestration worker that consumes FileDiscovered events, processes Markdown/ADRs,
+# and publishes the structured engineering knowledge to the Event Bus.
+import uuid
+from typing import Any, Protocol
+from backend.domain.events.ingestion import ADRCreated, DocumentationUpdated, FileDiscovered
+from etl.connectors.markdown.adr_parser import extract_decision, extract_status, is_adr
+from etl.connectors.markdown.parser import normalize_path, parse_markdown, strip_invalid_chars
+class EventPublisher(Protocol):
+    """Protocol defining the interface for publishing events."""
+    def publish(self, event: Any) -> None: ...
+class MarkdownWorker:
+    def __init__(self, publisher: EventPublisher) -> None:
+        self.publisher = publisher
+    def process_event(self, event: FileDiscovered) -> None:
+        """Processes a discovered file and emits the appropriate documentation event."""
+        if not event.file_path.endswith(".md"):
+            return  # US-5.1 AC1: Filter for .md extension
+        clean_path = normalize_path(event.file_path)
+        clean_content = strip_invalid_chars(event.content)
+        metadata, body = parse_markdown(clean_content)
+        event_id = str(uuid.uuid4())
+        source = "markdown_worker"
+        # US-5.2 AC1 & AC3: ADR routing
+        if is_adr(clean_path):
+            status = extract_status(body)
+            decision = extract_decision(body)
+            out_event = ADRCreated(
+                id=event_id,
+                source=source,
+                repository=event.repository,
+                file_path=clean_path,
+                metadata=metadata,
+                content=body,
+                status=status,
+                decision=decision,
+            )
+        else:
+            # US-5.1 AC4: Standard Doc Routing
+            out_event = DocumentationUpdated(  # type: ignore[assignment]
+                id=event_id,
+                source=source,
+                repository=event.repository,
+                file_path=clean_path,
+                metadata=metadata,
+                content=body,
+            )
+        self.publisher.publish(out_event)
+</file>
+
+<file path="etl/connectors/__init__.py">
+
+</file>
+
+<file path="etl/graph_builder/doc_linker.py">
+# etl/graph_builder/doc_linker.py
+# Downstream worker that inspects document events and links them to the Graph (US-5.4).
+import re
+from typing import Any, Protocol
+from backend.domain.events.ingestion import (
+    DocumentationLinkedEvent,
+    DocumentationLinkedPayload,
+    DocumentationUpdatedEvent,
+)
+from etl.graph_builder.lookup import Neo4jEntityLookupService
+class EventPublisher(Protocol):
+    def publish(self, event: Any) -> None: ...
+class DocumentLinkerWorker:
+    def __init__(self, lookup_service: Neo4jEntityLookupService, publisher: EventPublisher) -> None:
+        self.lookup_service = lookup_service
+        self.publisher = publisher
+        # US-5.4 AC2 heuristics: Captures things like "PaymentService" or "AuthAPI"
+        self.heuristic_pattern = re.compile(r"\b[A-Z][a-zA-Z0-9]*(?:Service|API|DB)\b")
+    def extract_heuristics(self, content: str) -> list[str]:
+        """Extracts potential software entity names from raw text."""
+        matches = self.heuristic_pattern.findall(content)
+        return list(set(matches))
+    async def process_event(self, event: DocumentationUpdatedEvent) -> None:
+        """Processes doc events and publishes linkage events if Neo4j nodes exist."""
+        content = getattr(event.data, "content", "")
+        if not content:
+            return
+        potential_entities = self.extract_heuristics(content)
+        for entity_name in potential_entities:
+            # AC3: Direct Neo4j Query
+            node_id = await self.lookup_service.find_entity_node_id(entity_name)
+            if node_id:
+                # AC4: Emit DocumentationLinked
+                payload = DocumentationLinkedPayload(
+                    doc_id=event.data.document_url,
+                    node_id=node_id,
+                    entity_name=entity_name,
+                    confidence=0.85,  # Heuristic confidence score
+                )
+                link_event = DocumentationLinkedEvent(source="document_linker_worker", data=payload)
+                self.publisher.publish(link_event)
+</file>
+
+<file path="etl/graph_builder/lookup.py">
+# etl/graph_builder/lookup.py
+# Read-only Cypher query service to verify physical nodes in Neo4j (US-5.4).
+from typing import Any, Protocol
+# Assuming neo4j driver protocol
+class AsyncDriverProtocol(Protocol):
+    def session(self) -> Any: ...
+class Neo4jEntityLookupService:
+    def __init__(self, driver: AsyncDriverProtocol) -> None:
+        self.driver = driver
+    async def find_entity_node_id(self, entity_name: str) -> str | None:
+        """Executes a direct graph query to find if a service/entity exists."""
+        query = """
+        MATCH (n) 
+        WHERE n.name = $name OR $name IN n.aliases
+        RETURN elementId(n) AS node_id 
+        LIMIT 1
+        """
+        async with self.driver.session() as session:
+            result = await session.run(query, name=entity_name)
+            record = await result.single()
+            if record:
+                return str(record["node_id"])
+        return None
+</file>
+
+<file path="etl/scheduler/confluence_sync.py">
+# etl/scheduler/confluence_sync.py
+# Orchestrates the Confluence pull pipeline and emits standard events (US-5.3).
+from datetime import UTC, datetime
+from typing import Any, Protocol
+from backend.domain.events.ingestion import DocumentationUpdatedEvent, DocumentationUpdatedPayload
+from etl.connectors.confluence.client import ConfluenceCloudClient
+from etl.connectors.confluence.converter import html_to_markdown
+class EventPublisher(Protocol):
+    def publish(self, event: Any) -> None: ...
+class ConfluenceSyncJob:
+    def __init__(self, client: ConfluenceCloudClient, publisher: EventPublisher) -> None:
+        self.client = client
+        self.publisher = publisher
+        # Baseline sync defaults to start of the epoch for MVP
+        self.last_sync_time = "2020-01-01T00:00:00Z"
+    async def run_sync(self) -> None:
+        """Executes an incremental pull, converts content, and publishes events."""
+        pages = await self.client.fetch_pages_since(self.last_sync_time)
+        for page in pages:
+            markdown_content = html_to_markdown(page["body"])
+            payload = DocumentationUpdatedPayload(
+                document_url=page.get("url", ""),
+                document_type="confluence",
+                repository_url="urn:codegraph:confluence",
+            )
+            # Extending dynamic payload with title and body
+            payload.content = markdown_content
+            payload.title = page["title"]
+            event = DocumentationUpdatedEvent(source="confluence_connector", data=payload)
+            self.publisher.publish(event)
+        self.last_sync_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+</file>
+
+<file path="etl/__init__.py">
+
+</file>
+
+<file path="scripts/__init__.py">
+
+</file>
+
+<file path="scripts/apply_neo4j_constraints.py">
+# scripts/apply_neo4j_constraints.py
+# This script applies Neo4j V1 and V2 schema constraints.
+# Refactored for testability to separate query generation from execution.
+import os
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+def get_schema_queries() -> list[str]:
+    """Generate all constraint queries for V1 and V2 nodes."""
+    labels = [
+        "Service",
+        "API",
+        "Database",
+        "MessageQueue",  # V1
+        "Repository",
+        "File",
+        "Class",
+        "Function",
+        "Document",
+        "ADR",  # V2
+    ]
+    queries = []
+    for label in labels:
+        queries.append(
+            f"CREATE CONSTRAINT {label.lower()}_id IF NOT EXISTS "
+            f"FOR (n:{label}) REQUIRE n.node_id IS UNIQUE;"
+        )
+    return queries
+def apply_constraints() -> None:
+    load_dotenv()
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    user = os.getenv("NEO4J_USER", "neo4j")
+    password = os.getenv("NEO4J_PASSWORD", "codegraph_dev_password")
+    print("Applying V1 and V2 constraints...")
+    with GraphDatabase.driver(uri, auth=(user, password)) as driver:
+        with driver.session() as session:
+            for query in get_schema_queries():
+                print(f"Executing: {query}")
+                session.run(query)
+    print("Constraints applied successfully.")
+if __name__ == "__main__":
+    apply_constraints()
+</file>
+
+<file path="scripts/validate_neo4j_schema.py">
+# scripts/validate_neo4j_schema.py
+# This script validates both the V1 architecture schema and the V2 code/doc schema
+# by asserting mock data can be written and queried successfully.
+import os
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+def validate_schema() -> None:
+    load_dotenv()
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    user = os.getenv("NEO4J_USER", "neo4j")
+    password = os.getenv("NEO4J_PASSWORD", "codegraph_dev_password")
+    auth_tuple: tuple[str, str] = (user, password)
+    # Insert V1 Architecture + V2 Code & Docs
+    insert_query = """
+    MERGE (s:Service {node_id: "srv-001", name: "PaymentService"})
+    MERGE (api:API {node_id: "api-001", name: "POST /checkout"})
+    // V2 Expanded Ontology
+    MERGE (repo:Repository {node_id: "repo-001", name: "payments-backend"})
+    MERGE (file:File {node_id: "file-001", name: "checkout.py"})
+    MERGE (doc:ADR {node_id: "adr-001", name: "ADR-01: Use Stripe"})
+    // Edges
+    MERGE (repo)-[:CONTAINS {source_system: "github", timestamp: "2026-08-14"}]->(file)
+    MERGE (s)-[:CALLS {source_system: "manual", timestamp: "2026-08-14"}]->(api)
+    MERGE (doc)-[:DOCUMENTS {source_system: "github", timestamp: "2026-08-14"}]->(s)
+    """
+    validation_query = """
+    MATCH (doc:ADR)-[r1:DOCUMENTS]->(s:Service)-[r2:CALLS]->(api:API)
+    RETURN doc.name AS adr, s.name AS service, api.name AS api
+    """
+    with GraphDatabase.driver(uri, auth=auth_tuple) as driver:
+        with driver.session() as session:
+            print("Inserting V1 and V2 mock data...")
+            session.run(insert_query)
+            print("Executing traversal query...")
+            result = session.run(validation_query)
+            records_found = False
+            for record in result:
+                records_found = True
+                print(
+                    f"ADR [{record['adr']}] -> Service [{record['service']}] -> API [{record['api']}]"  # noqa: E501
+                )
+            if records_found:
+                print("Validation PASSED: V1/V2 Schemas correctly mapped and queried.")
+            else:
+                print("Validation FAILED: No dependencies found.")
+if __name__ == "__main__":
+    validate_schema()
+</file>
+
+<file path="src/codegraph/__init__.py">
+def main() -> None:
+    print("Hello from codegraph!")
+</file>
+
+<file path=".pre-commit-config.yaml">
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.0
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [pydantic, fastapi]
+</file>
+
+<file path=".python-version">
+3.14
+</file>
+
+<file path=".repomixignore">
+# Add patterns to ignore here, one per line
+# Example:
+# *.log
+# tmp/
+</file>
+
+<file path="CONTRIBUTING.md">
+# Contributing to CodeGraph
+
+## Branching Strategy
+* Main branch: `main` (Protected, requires passing CI)
+* Feature branches: `feat/US-<id>-<short-description>`
+* Bug fixes: `fix/<short-description>`
+
+## Code Quality Quality Gates
+We strictly enforce type hints and linting. Before pushing your code, our pre-commit hooks will run `Ruff` and `Mypy`. If you bypass these, the GitHub Actions CI pipeline will reject your PR.
+</file>
+
+<file path="LICENSE">
+Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+</file>
+
+<file path="repomix.config.json">
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "input": {
+    "maxFileSize": 52428800
+  },
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "filePathStyle": "target-relative",
+    "parsableStyle": false,
+    "fileSummary": true,
+    "directoryStructure": true,
+    "files": true,
+    "removeComments": false,
+    "removeEmptyLines": true,
+    "compress": false,
+    "topFilesLength": 5,
+    "showLineNumbers": false,
+    "truncateBase64": false,
+    "copyToClipboard": false,
+    "includeFullDirectoryStructure": false,
+    "tokenCountTree": false,
+    "git": {
+      "sortByChanges": true,
+      "sortByChangesMaxCommits": 100,
+      "includeDiffs": false,
+      "includeLogs": false,
+      "includeLogsCount": 50
+    }
+  },
+  "include": [],
+  "ignore": {
+    "useGitignore": true,
+    "useDotIgnore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "**/test/**",
+      "**/tests/**"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": false
+  },
+  "tokenCount": {
+    "encoding": "o200k_base"
+  }
+}
+</file>
+
+<file path="backend/api/main.py">
+# backend/api/main.py
+# This file defines the main FastAPI application instance. It sets up the application,
+# registers routers, and configures global exception handling.
+from fastapi import FastAPI
+from backend.api.exceptions import global_exception_handler
+from backend.api.routers import health
+from backend.core.config import settings
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.PROJECT_NAME)
+    # Register exception handlers
+    app.add_exception_handler(Exception, global_exception_handler)
+    # Register routers
+    app.include_router(health.router, tags=["Platform Health"])
+    return app
+app = create_app()
+</file>
+
+<file path="backend/core/config.py">
+# backend/core/config.py
+# This file defines the Pydantic settings for the application, which are loaded from
+# environment variables or defaults.
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+class Settings(BaseSettings):
+    # Neo4j Configuration
+    PROJECT_NAME: str = "CodeGraph API"
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "codegraph_secret"
+    DATABASE_URL: str = "postgresql://postgres:codegraph_secret@localhost:5432/codegraph"
+    # GitHub App Integration
+    GITHUB_APP_ID: str | None = None
+    GITHUB_PRIVATE_KEY: SecretStr | None = None
+    GITHUB_WEBHOOK_SECRET: SecretStr = SecretStr("")
+    # Redis Worker
+    REDIS_URL: str = "redis://localhost:6379"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+settings = Settings()
+</file>
+
+<file path="backend/core/telemetry.py">
+# backend/core/telemetry.py
+# This file configures OpenTelemetry for distributed tracing across the platform.
+from typing import Any
+from fastapi import FastAPI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+def setup_telemetry(
+    app: FastAPI, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
+) -> None:
+    """Initializes OpenTelemetry tracing and instruments the FastAPI app (AC 1 & 2)."""
+    current_provider = trace.get_tracer_provider()
+    # Idempotency: If it's already an active SDK provider, just append the exporter
+    if hasattr(current_provider, "add_span_processor"):
+        if exporter is not None:
+            current_provider.add_span_processor(SimpleSpanProcessor(exporter))
+        try:
+            FastAPIInstrumentor().instrument_app(app)
+        except Exception:
+            pass
+        return
+    resource = Resource(attributes={SERVICE_NAME: service_name})
+    sdk_provider = TracerProvider(resource=resource)
+    if exporter is None:
+        # Production/Local Docker route: OTLP exporter pushing to Jaeger (AC 4)
+        otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+        processor: Any = BatchSpanProcessor(otlp_exporter)
+    else:
+        # Testing route: pushes spans to memory sequentially
+        processor = SimpleSpanProcessor(exporter)
+    sdk_provider.add_span_processor(processor)
+    # FORCE override the global provider to bypass NoOp locks and warnings during testing
+    setattr(trace, "_TRACER_PROVIDER", sdk_provider)
+    try:
+        # AC 2: Instrument FastAPI to capture all incoming HTTP requests
+        FastAPIInstrumentor().instrument_app(app)
+    except Exception:
+        pass
+def instrument_db_engine(engine: Any) -> None:
+    """AC 3: Helper to instrument SQLAlchemy engines once initialized."""
+    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
+</file>
+
+<file path="backend/domain/events/base.py">
+# backend/domain/events/base.py
+#
+# This file defines the base CloudEvents compliant schema for all CodeGraph events.
+import uuid
+from datetime import UTC, datetime
+from pydantic import BaseModel, Field
+class CodeGraphEvent[T](BaseModel):
+    """Base event model following a simplified CloudEvents specification."""
+    # Union allows Epic 3 to receive a UUID object, while Epic 5 can pass string IDs
+    id: uuid.UUID | str = Field(default_factory=uuid.uuid4, description="Unique event identifier")
+    source: str = Field(..., description="System emitting the event")
+    type: str = Field(..., description="The type of the event")
+    time: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # CloudEvents 1.0 specification fields required by Epic 3 tests
+    specversion: str = Field(default="1.0", description="CloudEvents specification version")
+    datacontenttype: str = Field(
+        default="application/json", description="Content type of the data payload"
+    )
+    # Strictly required to satisfy Epic 3 validation tests
+    data: T
+</file>
+
+<file path="backend/infrastructure/db.py">
+# backend/infrastructure/db.py
+# This file defines the database connection utilities for the application, including
+# functions to verify connections to Neo4j and PostgreSQL.
+from collections.abc import Generator
+import psycopg2
+from neo4j import GraphDatabase
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from backend.core.config import settings
+# Neo4j Driver Singleton
+neo4j_driver = GraphDatabase.driver(
+    settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+)
+def verify_neo4j_connection() -> bool:
+    try:
+        neo4j_driver.verify_connectivity()
+        return True
+    except Exception:
+        return False
+def verify_postgres_connection() -> bool:
+    try:
+        conn = psycopg2.connect(settings.DATABASE_URL)
+        conn.close()
+        return True
+    except Exception:
+        return False
+# 1. Create the SQLAlchemy Engine
+# (Make sure settings.DATABASE_URL matches your actual config property for Postgres/pgvector)
+# If your config uses a different name like POSTGRES_URL, replace it below.
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+# 2. Create the SessionLocal class factory bound to the engine
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# 3. The FastAPI Database Dependency
+def get_db() -> Generator[Session, None, None]:
+    """
+    FastAPI dependency that yields a database session and ensures
+    it is closed securely after the request completes.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+</file>
+
+<file path="backend/models/events.py">
+# backend/models/events.py
+#
+# This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
+from pydantic import BaseModel, Field
+class RepositoryIngestionRequested(BaseModel):
+    repository_url: str
+    repository_id: int
+    branch: str
+class FileDiscovered(BaseModel):
+    repository_id: int
+    file_path: str
+    language: str
+class EntityExtracted(BaseModel):
+    repository_id: int
+    file_path: str
+    entity_type: str = Field(..., description="Class, Function, Interface, etc.")
+    name: str
+    docstring: str | None = None
+class RelationshipExtracted(BaseModel):
+    repository_id: int
+    source_file: str
+    target_module: str
+    relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
+class DependencyDetected(BaseModel):
+    repository_id: int
+    file_path: str
+    package_name: str
+    version_constraint: str | None = None
+</file>
+
+<file path="backend/services/git_service.py">
+# backend/services/git_service.py
+# This file handles executing shallow git clones and triggering file discovery.
+import logging
+import subprocess
+import tempfile
+from backend.models.events import FileDiscovered
+from backend.services.file_traversal import traverse_repository
+from backend.services.parsers.factory import process_discovered_file
+logger = logging.getLogger(__name__)
+async def publish_file_discovered(event: FileDiscovered) -> None:
+    """Placeholder for publishing to Redis PubSub/Streams for US-4.3."""
+    # In full implementation, this writes to a Redis stream for the AST parser workers
+    logger.debug(f"Discovered {event.language} file: {event.file_path}")
+async def clone_and_process_repository(clone_url: str, repo_id: int, branch: str) -> None:
+    """Clones a repo to an ephemeral directory, processes files, and cleans up."""
+    # Create an ephemeral temporary directory that auto-cleans on block exit
+    with tempfile.TemporaryDirectory() as temp_dir:
+        logger.info(f"Cloning {clone_url} into ephemeral directory: {temp_dir}")
+        # Execute shallow clone
+        process = subprocess.run(
+            ["git", "clone", "--depth", "1", clone_url, temp_dir], capture_output=True, text=True
+        )
+        if process.returncode != 0:
+            logger.error(f"Git clone failed: {process.stderr}")
+            raise RuntimeError(f"Clone failed for {clone_url}")
+        # Traverse and publish file events
+        for file_path in traverse_repository(temp_dir):
+            ext = file_path.split(".")[-1]
+            relative_path = file_path.replace(temp_dir + "/", "")
+            event = FileDiscovered(repository_id=repo_id, file_path=relative_path, language=ext)
+            await publish_file_discovered(event)
+            # Trigger the parser synchronously or enqueue to next worker stage
+            await process_discovered_file(event, temp_dir)
+        logger.info(f"Completed ingestion traversal for {repo_id}. Ephemeral disk cleaning up.")
+</file>
+
+<file path="backend/worker.py">
+# backend/worker.py
+# This file configures the ARQ (Async Redis Queue) worker for background processing.
+from typing import Any
+from arq.connections import RedisSettings
+from backend.core.config import settings
+from backend.services.git_service import clone_and_process_repository
+async def clone_repository_task(
+    ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
+) -> None:
+    """ARQ Task wrapper for repository cloning."""
+    await clone_and_process_repository(clone_url, repo_id, branch)
+class WorkerSettings:
+    """Configuration for the ARQ worker process."""
+    functions = [clone_repository_task]
+    # redis_settings = settings.REDIS_URL
+    # Parse the URL string into an arq RedisSettings object
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    max_jobs = 10
+    job_timeout = 600  # 10 minutes max for cloning massive repos
+# To run the worker:
+# `arq backend.worker.WorkerSettings`
+</file>
+
+<file path=".dockerignore">
+.venv
+__pycache__
+.git
+*.pyc
+.env
+</file>
+
+<file path="Dockerfile">
+# Dockerfile
+
+# This Dockerfile uses a multi-stage build to create a lightweight runtime image
+#for a Python application.
+
+FROM python:3.12-slim
+
+# Copy the uv executable directly from the official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# Set uv to compile bytecode for faster startup
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy dependency manifests first to leverage Docker layer caching
+COPY pyproject.toml uv.lock* ./
+
+# Install dependencies (uv will automatically create the .venv here)
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Expose the virtual environment binaries to the system path
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy the actual application code
+COPY backend/ /app/backend/
+
+EXPOSE 8000
+
+# Let uv handle the execution and environment activation safely
+CMD ["uv", "run", "uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+</file>
+
+<file path="README.md">
+# Codegraph: Enterprise Developer Intelligence Platform
+AI-Augmented Engineering Platform that continuously understands enterprise software systems by ingesting repositories and documentation, constructing a Knowledge Graph and Hybrid RAG index, and exposing multiple interfaces for engineering intelligence.
+
+## Local Development
+This project uses `uv` for dependency management.
+1. Install `uv`: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+2. Sync dependencies: `uv sync`
+3. Activate virtual environment: `source .venv/bin/activate`
+</file>
+
+<file path="backend/domain/events/ingestion.py">
+# backend/domain/events/ingestion.py
+#
+# This file defines the specific polymorphic payloads for ingestion events
+# like RepositoryIndexed, CommitDetected, ServiceAdded, and DocumentationUpdated.
+from typing import Any, Literal
+from pydantic import BaseModel, TypeAdapter
+from backend.domain.events.base import CodeGraphEvent
+# --- Payloads ---
+class RepositoryIndexedPayload(BaseModel):
+    repository_url: str
+    commit_hash: str
+class CommitDetectedPayload(BaseModel):
+    repository_url: str
+    branch: str
+    commit_hash: str
+    author: str
+class ServiceAddedPayload(BaseModel):
+    service_name: str
+    language: str
+    repository_url: str
+class DocumentationUpdatedPayload(BaseModel):
+    document_url: str
+    document_type: str
+    repository_url: str
+    # Evolved for Epic 5 to hold the extracted Markdown and headers
+    content: str | None = None
+    title: str | None = None
+class DocumentationLinkedPayload(BaseModel):
+    doc_id: str
+    node_id: str
+    entity_name: str
+    confidence: float
+# backend/domain/events/ingestion.py
+#
+# This file defines the specific ingestion events used in Epic 4 and Epic 5.
+# (Note: Keep your existing Epic 3 models like RepositoryIndexedEvent untouched above these)
+class FileDiscovered(CodeGraphEvent[Any]):
+    type: str = "FileDiscovered"
+    repository: str
+    file_path: str
+    content: str
+    data: Any | None = None  # Override required base field for this specific event
+class DocumentationUpdated(CodeGraphEvent[Any]):
+    type: str = "DocumentationUpdated"
+    repository: str
+    file_path: str
+    metadata: dict[str, Any]
+    content: str
+    data: Any | None = None  # Override required base field for this specific event
+class ADRCreated(CodeGraphEvent[Any]):
+    type: str = "ADRCreated"
+    repository: str
+    file_path: str
+    metadata: dict[str, Any]
+    content: str
+    status: str | None = None
+    decision: str | None = None
+    data: Any | None = None  # Override required base field for this specific event
+# --- Events ---
+class RepositoryIndexedEvent(CodeGraphEvent[RepositoryIndexedPayload]):
+    type: Literal["RepositoryIndexed"] = "RepositoryIndexed"
+class CommitDetectedEvent(CodeGraphEvent[CommitDetectedPayload]):
+    type: Literal["CommitDetected"] = "CommitDetected"
+class ServiceAddedEvent(CodeGraphEvent[ServiceAddedPayload]):
+    type: Literal["ServiceAdded"] = "ServiceAdded"
+class DocumentationUpdatedEvent(CodeGraphEvent[DocumentationUpdatedPayload]):
+    type: Literal["DocumentationUpdated"] = "DocumentationUpdated"
+class DocumentationLinkedEvent(CodeGraphEvent[DocumentationLinkedPayload]):
+    type: Literal["DocumentationLinked"] = "DocumentationLinked"
+# --- Polymorphic Router ---
+IngestionEvent = (
+    RepositoryIndexedEvent | CommitDetectedEvent | ServiceAddedEvent | DocumentationUpdatedEvent
+)
+# TypeAdapter configured with a discriminator allows mapping arbitrary dictionaries
+# to the correct specific Event class based on the 'type' field.
+_event_adapter: TypeAdapter[IngestionEvent] = TypeAdapter(IngestionEvent)
+def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
+    """
+    Parses a raw dictionary into the appropriate specific CodeGraphEvent subtype.
+    Raises pydantic.ValidationError if invalid.
+    """
+    return _event_adapter.validate_python(payload)
+</file>
+
+<file path="Makefile">
+.PHONY: help install test test-unit typecheck lint lint-fix format docker-up docker-down clean
+
+# Default target
+help:
+	@echo "CodeGraph AI - Development Automation"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make install        Install project dependencies using uv"
+	@echo "  make test           Run the full test suite"
+	@echo "  make test-unit      Run unit tests (e.g., docker-compose verification)"
+	@echo "  make typecheck      Run Mypy static type checking"
+	@echo "  make lint           Run Ruff code linting checks"
+	@echo "  make lint-fix       Run Ruff and auto-fix safe lint violations"
+	@echo "  make format         Format code using Black and Ruff"
+	@echo "  make docker-up      Start local services via Docker Compose"
+	@echo "  make docker-down    Stop local Docker services"
+	@echo "  make clean          Clean up build artifacts and cache files"
+
+install:
+	uv sync --all-extras
+
+test:
+	uv run pytest
+
+test-unit:
+	uv run pytest tests/unit/test_docker_compose.py
+
+lint:
+# Linting with auto-fix enabled
+	uv run ruff check --fix .
+# Code Formatting
+	uv run ruff format .
+# Typechecking
+	uv run mypy .
+
+ruff-check-tb:
+# Linting with auto-fix enabled (Ruff stack traces)
+	uv run ruff check --fix --show-files .
+
+mypy-tb:
+# Typechecking (Mypy internal stack traces)
+	uv run mypy . --tb
+
+docker-up:
+	docker-compose up -d --build
+
+docker-down:
+	docker compose down
+
+clean:
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name ".pytest_cache" -exec rm -rf {} +
+	find . -type d -name ".mypy_cache" -exec rm -rf {} +
+	find . -type d -name ".ruff_cache" -exec rm -rf {} +
+</file>
+
+<file path="backend/main.py">
+# backend/main.py
+#
+# This file defines the main FastAPI application instance.
+from fastapi import FastAPI
+from backend.api.middleware.logging_middleware import LoggingMiddleware
+from backend.api.middleware.metrics_middleware import MetricsMiddleware
+from backend.api.routers import system, webhooks
+from backend.core.logger import setup_logging
+from backend.core.telemetry import setup_telemetry
+# Initialize structured logging before app startup
+setup_logging()
+app = FastAPI(
+    title="CodeGraph Enterprise Platform",
+    description="Enterprise Developer Intelligence Platform API",
+    version="0.1.0",
+)
+# Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(LoggingMiddleware)
+# Initialize OpenTelemetry for Distributed Tracing
+setup_telemetry(app)
+# Register Routers
+app.include_router(system.router)
+app.include_router(webhooks.router)
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    return {"status": "healthy"}
+</file>
+
+<file path=".gitignore">
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#   Usually these files are written by a python script from a template
+#   before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+# Pipfile.lock
+
+# UV
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+# uv.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+# poetry.lock
+# poetry.toml
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
+#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
+# pdm.lock
+# pdm.toml
+.pdm-python
+.pdm-build/
+
+# pixi
+#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
+# pixi.lock
+#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
+#   in the .venv directory. It is recommended not to include this directory in version control.
+.pixi
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# Redis
+*.rdb
+*.aof
+*.pid
+
+# RabbitMQ
+mnesia/
+rabbitmq/
+rabbitmq-data/
+
+# ActiveMQ
+activemq-data/
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+#   JetBrains specific template is maintained in a separate JetBrains.gitignore that can
+#   be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
+#   and can be added to the global gitignore or merged into this file.  For a more nuclear
+#   option (not recommended) you can uncomment the following to ignore the entire idea folder.
+# .idea/
+
+# Abstra
+#   Abstra is an AI-powered process automation framework.
+#   Ignore directories containing user credentials, local state, and settings.
+#   Learn more at https://abstra.io/docs
+.abstra/
+
+# Visual Studio Code
+#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
+#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#   you could uncomment the following to ignore the entire vscode folder
+# .vscode/
+# Temporary file for partial code execution
+tempCodeRunnerFile.py
+
+# Ruff stuff:
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc
+
+# Marimo
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Docker
+.docker-data/
+docker/
+
+.continue
+</file>
+
+<file path="docs/epics/requirements.md">
+# Epics and User Stories of Codegraph: Enterprise AI-Augmented Engineering Platform
+
+## Table of Contents
+
+* [Epic 0: Impact Analysis Prototype](#epic-0-impact-analysis-prototype)
+  * [US-0.1: Design Knowledge Graph Schema for Architecture Topology](#us-01-design-knowledge-graph-schema-for-architecture-topology)
+  * [US-0.2: Implement Cypher Traversal for Blast Radius Calculation](#us-02-implement-cypher-traversal-for-blast-radius-calculation)
+  * [US-0.3: LLM Context Assembly & Risk Scoring](#us-03-llm-context-assembly--risk-scoring)
+  * [US-0.4: Expose Impact Analysis via FastAPI](#us-04-expose-impact-analysis-via-fastapi)
+* [Phase 1: Foundation & Event Architecture (The Skeleton)](#phase-1-foundation--event-architecture-the-skeleton)
+  * [Epic 1: Platform Foundation & Core API](#epic-1-platform-foundation--core-api)
+    * [US-1.1: Initialize Monorepo and Development Environment](#us-11-initialize-monorepo-and-development-environment)
+    * [US-1.2: Containerize Local Development Stack](#us-12-containerize-local-development-stack)
+    * [US-1.3: Build Core FastAPI Application Shell](#us-13-build-core-fastapi-application-shell)
+    * [US-1.4: Implement CI Pipeline Quality Gates](#us-14-implement-ci-pipeline-quality-gates)
+  * [Epic 2: Core Observability & Telemetry](#epic-2-core-observability--telemetry)
+    * [US-2.1: Standardize Structured JSON Logging](#us-21-standardize-structured-json-logging)
+    * [US-2.2: Implement Distributed Tracing (OpenTelemetry)](#us-22-implement-distributed-tracing-opentelemetry)
+    * [US-2.3: Expose Application Metrics Endpoint](#us-23-expose-application-metrics-endpoint)
+    * [US-2.4: LLM & GraphRAG Telemetry Foundation](#us-24-llm--graphrag-telemetry-foundation)
+  * [Epic 3: Event-Driven Ingestion Architecture](#epic-3-event-driven-ingestion-architecture)
+    * [US-3.1: Deploy Local Event Broker Infrastructure](#us-31-deploy-local-event-broker-infrastructure)
+    * [US-3.2: Define the Engineering Event Data Model](#us-32-define-the-engineering-event-data-model)
+    * [US-3.3: Implement Publisher & Consumer Routing](#us-33-implement-publisher--consumer-routing)
+    * [US-3.4: Dead Letter Queue (DLQ) & Resilience Mechanisms](#us-34-dead-letter-queue-DLQ--resilience-mechanisms)
+* [Phase 2: Structural Knowledge Extraction (The Deterministic Brain)](#phase-2-structural-knowledge-extraction-the-deterministic-brain)
+  * [Epic 4: Repository Ingestion (ASTs & Dependencies)](#epic-4-repository-ingestion-asts--dependencies)
+    * [US-4.1: Secure Source Code Provider Integration (GitHub App)](#us-41-secure-source-code-provider-integration-github-app)
+    * [US-4.2: Asynchronous Repository Clone Worker](#us-42-asynchronous-repository-clone-worker)
+    * [US-4.3: AST Entity Extraction via Tree-sitter](#us-43-ast-entity-extraction-via-tree-sitter)
+    * [US-4.4: Application Dependency & Relationship Extraction](#us-44-application-dependency--relationship-extraction)
+  * [Epic 5: Documentation Ingestion](#epic-5-documentation-ingestion)
+    * [US-5.1: In-Repository Markdown Parsing](#us-51-in-repository-markdown-parsing)
+    * [US-5.2: Architecture Decision Record (ADR) Extraction](#us-52-architecture-decision-record-adr-extraction)
+    * [US-5.3: Confluence Incremental Sync Connector](#us-53-confluence-incremental-sync-connector)
+    * [US-5.4: Document-to-Entity Linking Worker](#us-54-document-to-entity-linking-worker)
+  * [Epic 6: Knowledge Graph Builder](#epic-6-knowledge-graph-builder)
+    * [US-6.1: Define and Apply Expanded Graph Schema (V2)](#us-61-define-and-apply-expanded-graph-schema-v2)
+    * [US-6.2: Implement Graph Mutation Service](#us-62-implement-graph-mutation-service)
+    * [US-6.3: Code Entity Event Consumer](#us-63-code-entity-event-consumer)
+    * [US-6.4: Documentation Event Consumer](#us-64-documentation-event-consumer)
+* [Phase 3: Semantic Processing (The Probabilistic Brain)](#phase-3-semantic-processing-the-probabilistic-brain)
+  * [Epic 7: Graph-Aware Chunking Framework](#epic-7-graph-aware-chunking-framework)
+  * [Epic 8: Embedding Pipeline & Vector Store](#epic-8-embedding-pipeline--vector-store)
+* [Phase 4: Intelligence & Delivery (The User Value)](#phase-4-intelligence--delivery-the-user-value)
+  * [Epic 9: Hybrid Retrieval (Graph Traversal + Vector Search)](#epic-9-hybrid-retrieval-graph-traversal--vector-search)
+  * [Epic 10: RAG Evaluation & Query Engine](#epic-10-rag-evaluation--query-engine)
+  * [Epic 11: Engineering Intelligence](#epic-11-engineering-intelligence)
+  * [Epic 12: Frontend Experience (Web UI)](#epic-12-frontend-experience-web-ui)
+* [Phase 5: Enterprise Scale & Governance (Production Readiness)](#phase-5-enterprise-scale--governance-production-readiness)
+  * [Epic 13: Production Readiness & Deployment](#epic-13-production-readiness--deployment)
+  * [Epic 14: Version-Aware Knowledge Management](#epic-14-version-aware-knowledge-management)
+  * [Epic 15: Knowledge Governance & Security](#epic-15-knowledge-governance--security)
+  * [Epic 16: Plugin Framework & Connectors](#epic-16-plugin-framework--connectors)
+  * [Epic 17: Platform SDK & Analytics](#epic-17-platform-sdk--analytics)
+
+---
+
+# Epic 0: Impact Analysis Prototype
+
+## Business Value
+
+Provide engineering teams with immediate visibility into the blast radius of proposed architectural or code changes, reducing integration bugs, deployment failures, and unknown downstream effects.
+
+## Scope of Vertical Slice
+
+Instead of boiling the ocean and indexing an entire enterprise, our MVP will simulate a constrained environment (e.g., a microservices architecture with a frontend, a few backend services, a database, and a message queue). The AI must traverse this specific graph to answer: *"If I modify X, what breaks?"*
+
+## User Stories Breakdown
+
+### US-0.1: Design Knowledge Graph Schema for Architecture Topology
+
+* **Description:** Define the Neo4j node and edge structures required to represent services, APIs, databases, and message queues.
+* **Acceptance Criteria:**
+
+  * Schema successfully maps `(Service)-[:CALLS]->(API)` and `(Service)-[:PUBLISHES]->(Event)`.
+  * Schema supports querying downstream and upstream dependencies.
+* **Story Points:** 3
+
+### US-0.2: Implement Cypher Traversal for Blast Radius Calculation
+
+* **Description:** Create the core backend logic that takes a target node (e.g., `PaymentService`) and traverses outbound/inbound edges up to a depth of 3 to map the impact zone.
+* **Acceptance Criteria:**
+
+  * API endpoint accepts a node ID and returns a JSON subgraph of impacted components.
+  * Traversal respects a configured maximum depth to prevent graph explosion.
+* **Story Points:** 5
+
+### US-0.3: LLM Context Assembly & Risk Scoring
+
+* **Description:** Feed the extracted Cypher subgraph into the LLM context window to generate a human-readable risk report and assign a "Dependency Risk Score".
+* **Acceptance Criteria:**
+
+  * LLM correctly identifies which downstream services might fail.
+  * Output includes a Risk Score (Low, Medium, High, Critical) based on the number of dependent critical nodes.
+* **Story Points:** 5
+
+### US-0.4: Expose Impact Analysis via FastAPI
+
+* **Description:** Build the REST API layer so the frontend (or future CLI) can query the Impact Analysis engine.
+* **Acceptance Criteria:**
+
+  * Endpoint `POST /api/v1/intelligence/impact` is available and documented via OpenAPI.
+* **Story Points:** 2
+
+---
+
+# Phase 1: Foundation & Event Architecture (The Skeleton)
+
+## Epic 1: Platform Foundation & Core API
+  * *Rationale:* Sets up the monorepo, CI/CD, Docker configurations, base FastAPI routing, and database connections. We need a running system on day one.
+
+## User Stories Breakdown
+
+### US-1.1: Initialize Monorepo and Development Environment
+
+- **Description:** Establish the project's physical structure, dependency management, and code quality tools to ensure all engineers follow the same standards.
+
+- **Acceptance Criteria:**
+
+- Project structure follows the defined Clean Architecture directories (`backend/api`, `backend/core`, `backend/domain`, etc.).
+
+- Dependency management is configured using `Poetry` or `uv`.
+
+- Code quality tools (Ruff, Mypy, Pre-commit hooks) are installed and configured.
+
+- A basic `README.md` and `CONTRIBUTING.md` are present.
+
+- **Business Value:** Prevents technical debt and ensures code consistency across the engineering team from the start.
+
+- **Priority:** Highest (P0)
+
+- **Dependencies:** None
+
+- **Technical Notes:** Enforce strict type checking in Mypy. Use Ruff for replacing Black/Flake8/isort to speed up pre-commit times.
+
+- **Story Points:** 2
+
+- **Definition of Done:** Pre-commit hooks pass locally, and the structure is merged to the `main` branch.
+
+### US-1.2: Containerize Local Development Stack
+
+- **Description:** Create a unified local execution environment using Docker Compose so developers can spin up the API and all backing datastores with a single command.
+
+- **Acceptance Criteria:**
+
+- `docker-compose.yml` includes the FastAPI backend service.
+
+- `docker-compose.yml` includes a Neo4j container (with APOC plugin).
+
+- `docker-compose.yml` includes a PostgreSQL container (with `pgvector` extension).
+
+- Local state/volumes are mapped appropriately to persist data between container restarts.
+
+- **Business Value:** Eliminates the "it works on my machine" problem and dramatically speeds up developer onboarding.
+
+- **Priority:** Highest (P0)
+
+- **Dependencies:** US-1.1
+
+- **Technical Notes:** Use multi-stage Dockerfiles for the Python backend to optimize the final image size.
+
+- **Story Points:** 3
+
+- **Definition of Done:** `docker-compose up` successfully starts all services, and datastores accept local connections.
+
+### US-1.3: Build Core FastAPI Application Shell
+
+- **Description:** Implement the foundational FastAPI application with standardized routing, Pydantic configuration management, and global exception handling.
+
+- **Acceptance Criteria:**
+
+- FastAPI app initializes successfully.
+
+- Dependency Injection container (or standard FastAPI `Depends`) is set up for database sessions.
+
+- Global exception handlers are implemented to return standardized JSON error responses.
+
+- A `GET /health` endpoint returns 200 OK and checks connections to Neo4j and Postgres.
+
+- **Business Value:** Provides a secure, scalable, and self-documenting API layer (OpenAPI/Swagger) for all future AI and Graph features.
+
+- **Priority:** High (P1)
+
+- **Dependencies:** US-1.1, US-1.2
+
+- **Technical Notes:** Use Pydantic `BaseSettings` for environment variable validation. Implement CORS middleware early.
+
+- **Story Points:** 5
+
+- **Definition of Done:** Unit tests pass for the health endpoint, and the Swagger UI is accessible locally at `http://localhost:8000/docs`.
+
+### US-1.4: Implement CI Pipeline Quality Gates
+
+- **Description:** Set up GitHub Actions to enforce quality gates on every Pull Request.
+
+- **Acceptance Criteria:**
+
+- CI pipeline triggers on PRs to `main`.
+
+- Pipeline runs Ruff (linting), Mypy (type checking), and Pytest (unit tests).
+
+- Pipeline builds the Docker image to ensure there are no build regressions.
+
+- Branch protection rules are configured to require passing CI before merge.
+
+- **Business Value:** Protects the main branch from regressions, broken builds, and degraded code quality.
+
+- **Priority:** High (P1)
+
+- **Dependencies:** US-1.1, US-1.3
+
+- **Technical Notes:** Use GitHub Actions caching for Python dependencies to speed up CI runs.
+
+- **Story Points:** 2
+
+- **Definition of Done:** A test PR successfully triggers and passes the CI pipeline.
+
+---
+
+## Epic 2: Core Observability & Telemetry
+  * *Rationale:* Pulled from the end of the backlog. We must instrument structured logging, tracing (OpenTelemetry), and basic DB metrics *before* we start pushing gigabytes of code through pipelines.
+
+## User Stories Breakdown
+
+### US-2.1: Standardize Structured JSON Logging
+
+- **Description:** Replace standard Python logging with a structured JSON logger (e.g., `structlog` or `loguru`). Every log entry must include contextual metadata (`request_id`, `environment`, `service_name`) to allow enterprise log aggregators (Datadog, Splunk, ELK) to parse and index them efficiently.
+
+- **Acceptance Criteria:**
+
+- All FastAPI routes output logs in purely JSON format.
+
+- A unique `request_id` is injected into every incoming HTTP request via middleware.
+
+- The `request_id` is automatically propagated to all log entries generated during that request lifecycle.
+
+- Sensitive data (e.g., API keys, Authorization headers) is masked/redacted in the logging middleware.
+
+- **Business Value:** Reduces Mean Time to Resolution (MTTR) by allowing engineers to query logs systematically rather than grepping text files.
+
+- **Priority:** High (P0)
+
+- **Dependencies:** Epic 1 (FastAPI Foundation)
+
+- **Technical Notes:** Recommend `structlog`. Use standard Python logging for third-party libraries but capture and format them through the structured logging pipeline.
+
+- **Story Points:** 3
+
+- **Definition of Done:** Code merged, unit tests pass, JSON logs verified in standard output, documentation updated.
+
+**Task Breakdown (US-2.1):**
+
+- **Task 1: Configure Structlog setup**
+
+- *Complexity:* Low
+
+- *Dependencies:* None
+
+- *Expected Files:* `backend/core/logger.py`, `backend/core/config.py`
+
+- *Testing:* Unit tests verifying JSON output format.
+
+- **Task 2: Implement FastAPI Request ID Middleware**
+
+- *Complexity:* Medium
+
+- *Dependencies:* Task 1
+
+- *Expected Files:* `backend/api/middleware/logging_middleware.py`, `backend/main.py`
+
+- *Testing:* Integration tests ensuring `request_id` matches across request lifecycle.
+
+### US-2.2: Implement Distributed Tracing (OpenTelemetry)
+
+- **Description:** Instrument the application with OpenTelemetry (OTEL) to track request flows across boundaries (FastAPI -> PostgreSQL -> Neo4j -> External LLM API).
+
+- **Acceptance Criteria:**
+
+- OTEL SDK is initialized at application startup.
+
+- FastAPI requests generate spans automatically.
+
+- Database queries (SQLAlchemy/pgvector and Neo4j Python Driver) are instrumented and generate child spans.
+
+- Traces are exported to a local tracing backend (e.g., Jaeger or Zipkin) running in Docker Compose.
+
+- **Business Value:** Provides complete visibility into latency bottlenecks, especially critical for multi-stage GraphRAG pipelines where a slow Cypher query could degrade the user experience.
+
+- **Priority:** High (P0)
+
+- **Dependencies:** US-2.1
+
+- **Technical Notes:** Use `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-sqlalchemy`.
+
+- **Story Points:** 5
+
+- **Definition of Done:** Spans successfully visible in local Jaeger UI for standard API requests.
+
+**Task Breakdown (US-2.2):**
+
+- **Task 1: Setup OpenTelemetry SDK & FastAPI Instrumentation**
+
+- *Complexity:* Medium
+
+- *Dependencies:* None
+
+- *Expected Files:* `backend/core/telemetry.py`, `backend/main.py`
+
+- *Testing:* Unit test mocking the span exporter.
+
+- **Task 2: Instrument Neo4j and PostgreSQL connections**
+
+- *Complexity:* Medium
+
+- *Dependencies:* Task 1
+
+- *Expected Files:* `backend/core/database.py`, `backend/core/graph_db.py`
+
+- *Testing:* Integration tests validating DB queries create child spans.
+
+- **Task 3: Add Jaeger to Docker Compose local stack**
+
+- *Complexity:* Low
+
+- *Dependencies:* None
+
+- *Expected Files:* `docker/docker-compose.yaml`
+
+- *Testing:* Verify Jaeger UI is accessible at `localhost:16686`.
+
+### US-2.3: Expose Application Metrics Endpoint
+
+- **Description:** Expose a `/metrics` endpoint to serve Prometheus-compatible metrics. Track standard application health metrics (request count, latency distributions) and establish a framework for custom Engineering Intelligence metrics later.
+
+- **Acceptance Criteria:**
+
+- Endpoint `GET /metrics` exists and returns Prometheus text format.
+
+- Tracks HTTP request duration (Histogram).
+
+- Tracks total HTTP requests (Counter) by status code and path.
+
+- Tracks current active database connections (Gauge).
+
+- **Business Value:** Enables proactive alerting (e.g., alerting the on-call engineer if the 95th percentile latency of graph traversals exceeds 2 seconds).
+
+- **Priority:** Medium (P1)
+
+- **Dependencies:** None
+
+- **Technical Notes:** Use `prometheus-client` and standard FastAPI middleware for metrics.
+
+- **Story Points:** 3
+
+- **Definition of Done:** Endpoint returns properly formatted data, passing load test checks without degrading API performance.
+
+**Task Breakdown (US-2.3):**
+
+- **Task 1: Build Prometheus Metrics Middleware**
+
+- *Complexity:* Medium
+
+- *Dependencies:* None
+
+- *Expected Files:* `backend/api/middleware/metrics_middleware.py`, `backend/core/metrics.py`
+
+- *Testing:* E2E test making multiple requests and asserting counter increments.
+
+- **Task 2: Expose /metrics route safely**
+
+- *Complexity:* Low
+
+- *Dependencies:* Task 1
+
+- *Expected Files:* `backend/api/routers/system.py`
+
+- *Testing:* API test asserting 200 OK and text/plain response.
+
+### US-2.4: LLM & GraphRAG Telemetry Foundation
+
+- **Description:** Create specialized telemetry wrappers for LLM calls to track prompt tokens, completion tokens, costs, and model latency. This is essential for controlling cloud costs and measuring AI generation performance.
+
+- **Acceptance Criteria:**
+
+- Custom OTEL spans created specifically for LLM calls.
+
+- Metrics counters established for `llm_tokens_total` (labeled by model and prompt/completion).
+
+- Latency histograms created for `llm_generation_duration_seconds`.
+
+- **Business Value:** Provides strict governance and FinOps capabilities to monitor the financial cost of running the Engineering Intelligence platform.
+
+- **Priority:** Medium (P1)
+
+- **Dependencies:** US-2.2, US-2.3
+
+- **Technical Notes:** Create a reusable decorator or base class for all external AI interactions that automatically handles the token tracking.
+
+- **Story Points:** 3
+
+- **Definition of Done:** Dummy LLM call implemented in tests triggers token counters and span generation.
+
+**Task Breakdown (US-2.4):**
+
+- **Task 1: Design AI Telemetry Decorator/Wrapper**
+- *Complexity:* High
+- *Dependencies:* US-2.2
+- *Expected Files:* `backend/core/ai_telemetry.py`
+- *Testing:* Unit tests asserting correct token counting and metrics logging using mock OpenAI responses.
+
+---
+
+## Epic 3: Event-Driven Ingestion Architecture
+  * *Rationale:* Promoted from Epic 15. The prompt demands incremental updates (no full rebuilds). We must lay down the Event Bus (e.g., handling `CommitDetected`, `ServiceAdded` events) before writing any ingestion logic.
+
+## User Stories Breakdown
+
+#### US-3.1: Deploy Local Event Broker Infrastructure
+
+* **Description:** Containerize and configure the local development event broker (Kafka in KRaft mode) and establish the foundational backend connection managers.
+* **Acceptance Criteria:**
+* Kafka runs successfully in `docker-compose.yml` without Zookeeper.
+* FastAPI backend connects to the broker on startup and gracefully disconnects on shutdown.
+* Broker exposes an admin UI (e.g., Kafka UI) on a local port for developer observability.
+
+* **Business Value:** Provides the reliable, high-throughput transport layer necessary for processing thousands of repository files concurrently.
+* **Priority:** P0 (Highest)
+* **Dependencies:** Epic 1 & 2 Completed.
+* **Technical Notes:** Use `aiokafka` for async, non-blocking I/O. Integrate broker connection states into the FastAPI health check endpoint.
+* **Story Points:** 3
+* **Definition of Done:** Infrastructure is running, health checks pass, CI/CD pipeline starts the broker successfully during integration tests.
+
+**Task Breakdown:**
+
+* *Task 1:* Add Kafka (KRaft mode) and Kafka-UI to `docker-compose.yml`. (Complexity: Low)
+* *Task 2:* Create `backend/core/events/broker.py` with async connection management. (Complexity: Medium)
+* *Task 3:* Update FastAPI lifespan events to handle broker connect/disconnect. (Complexity: Low)
+* *Task 4:* Write Pytest fixture for the event broker. (Complexity: Medium)
+
+#### US-3.2: Define the Engineering Event Data Model
+
+* **Description:** Create strict, polymorphic Pydantic schemas for the platform's core domain events to ensure schema validation at the producer level.
+* **Acceptance Criteria:**
+* Base `CodeGraphEvent` class implements the CloudEvents specification (id, source, specversion, type, datacontenttype, time).
+* Specific payload schemas exist for `RepositoryIndexed`, `CommitDetected`, `ServiceAdded`, and `DocumentationUpdated`.
+* Validation fails immediately if an invalid payload is published.
+
+* **Business Value:** Prevents "poison pill" messages from crashing consumer microservices by enforcing strict data contracts.
+* **Priority:** P0
+* **Dependencies:** US-3.1
+* **Technical Notes:** Utilize Pydantic's `Discriminator` and `Union` types for polymorphic event parsing.
+* **Story Points:** 2
+* **Definition of Done:** Mypy passes, schemas are fully unit-tested with valid and invalid JSON payloads.
+
+**Task Breakdown:**
+
+* *Task 1:* Create `backend/domain/events/base.py` for CloudEvents wrapper. (Complexity: Low)
+* *Task 2:* Define payload schemas in `backend/domain/events/ingestion.py`. (Complexity: Medium)
+* *Task 3:* Write unit tests verifying Pydantic discriminator routing. (Complexity: Low)
+
+#### US-3.3: Implement Publisher & Consumer Routing
+
+* **Description:** Build the Python framework that allows services to publish events to topics, and allows background workers to subscribe to topics and process events asynchronously.
+* **Acceptance Criteria:**
+* `EventPublisher.publish(event: CodeGraphEvent)` abstraction is implemented.
+* A consumer loop can listen to a specific topic (e.g., `events.ingestion`) and route the event to a registered handler function based on the event `type`.
+* Consumers automatically inject trace IDs into OpenTelemetry context (from Epic 2).
+
+* **Business Value:** Decouples platform modules. The GitHub webhook handler can just "fire and forget", while the graph builder works at its own pace.
+* **Priority:** P0
+* **Dependencies:** US-3.1, US-3.2
+* **Technical Notes:** Implement consumer loops as asyncio background tasks managed by the FastAPI lifespan or a separate CLI worker entrypoint.
+* **Story Points:** 5
+* **Definition of Done:** Integration test successfully publishes a test event and a dummy consumer receives and logs it.
+
+**Task Breakdown:**
+
+* *Task 1:* Implement `EventPublisher` wrapper using `AIOKafkaProducer`. (Complexity: Medium)
+* *Task 2:* Implement `EventConsumer` loop using `AIOKafkaConsumer`. (Complexity: High)
+* *Task 3:* Implement the router/registry mapping event types to handler functions. (Complexity: Medium)
+* *Task 4:* Integrate OpenTelemetry context propagation in headers. (Complexity: High)
+
+#### US-3.4: Dead Letter Queue (DLQ) & Resilience Mechanisms
+
+* **Description:** Ensure that if an event fails to process (e.g., Neo4j is temporarily down, or LLM parsing fails), the message is not lost but routed to a Dead Letter Queue for later retry or manual intervention.
+* **Acceptance Criteria:**
+* If a consumer raises an unhandled exception, the event is acknowledged but republished to a `dlq.<topic_name>` topic.
+* Logs (from Epic 2) capture the original exception, event ID, and DLQ routing action.
+
+* **Business Value:** Ensures zero data loss. Missing a commit event could mean missing a critical architectural dependency change.
+* **Priority:** P1
+* **Dependencies:** US-3.3
+* **Technical Notes:** Implement this as a decorator or middleware on the consumer handler functions.
+* **Story Points:** 3
+* **Definition of Done:** End-to-end test verifying a forced failure results in message appearance in the DLQ topic.
+
+**Task Breakdown:**
+
+* *Task 1:* Create consumer middleware/decorator for exception catching. (Complexity: Medium)
+* *Task 2:* Implement DLQ publishing logic. (Complexity: Low)
+* *Task 3:* Create integration tests for forced consumer failures. (Complexity: Medium)
+
+---
+
+# Phase 2: Structural Knowledge Extraction (The Deterministic Brain)
+
+## Epic 4: Repository Ingestion (ASTs & Dependencies)
+  * *Rationale:* Connects to GitHub, clones code, and parses Abstract Syntax Trees.
+
+## User Story Breakdown
+
+### US-4.1: Secure Source Code Provider Integration (GitHub App)
+
+* **Description:** As a Platform Administrator, I need to connect CodeGraph to my GitHub Organization via a GitHub App so that the platform can securely authenticate and listen to repository events.
+* **Acceptance Criteria:**
+* System supports GitHub App installation (OAuth/JWT authentication).
+* Webhook endpoint securely receives payload and validates HMAC signatures.
+* Webhook pushes a `RepositoryIngestionRequested` event to the Event Bus.
+
+* **Business Value:** Establishes secure, standard enterprise access without relying on individual developer Personal Access Tokens (PATs).
+* **Dependencies:** Epic 3 (Event Bus must be available).
+* **Technical Notes:** Use PyGithub with JWT for App authentication. Store private keys securely via Pydantic Settings/Vault.
+* **Story Points:** 5
+* **Definition of Done:** Code merged, unit tests pass (mocking GitHub API), webhook payload validation verified, observability traces active.
+
+### US-4.2: Asynchronous Repository Clone Worker
+
+* **Description:** As the Ingestion Pipeline, I need to react to `RepositoryIngestionRequested` events by asynchronously downloading the code so that the main API remains non-blocking.
+* **Acceptance Criteria:**
+* Background worker consumes the event and performs a shallow clone (`--depth 1`).
+* Clones to an ephemeral, isolated `/tmp` directory inside the worker container.
+* Traverses the directory, filters out ignored files (`.gitignore`, binaries).
+* Emits `FileDiscovered` events to the Event Bus for each valid source file.
+* Cleans up the ephemeral directory upon completion or failure.
+
+* **Business Value:** Ensures the platform can ingest massive enterprise repositories without crashing the main API layer.
+* **Priority:** High
+* **Story Points:** 8
+* **Definition of Done:** Worker deployed, integration test validates successful clone and cleanup of a sample repo, disk usage metrics tracked in Datadog/Prometheus.
+
+### US-4.3: AST Entity Extraction via Tree-sitter
+
+* **Description:** As the Ingestion Pipeline, I need to parse source files into Abstract Syntax Trees so that I can extract structural engineering entities (Classes, Functions, Methods).
+* **Acceptance Criteria:**
+* Worker consumes `FileDiscovered` events.
+* Detects language (Python, JS/TS) and applies the correct Tree-sitter grammar.
+* Extracts structural nodes (e.g., class names, function signatures, docstrings).
+* Normalizes and publishes these as `EntityExtracted` events.
+
+* **Business Value:** Moves the platform beyond naive text chunking into true semantic code understanding.
+* **Dependencies:** US-4.2.
+* **Technical Notes:** Focus purely on Python and TypeScript for the MVP. Create a generalized interface for adding Go/Java later.
+* **Story Points:** 8
+* **Definition of Done:** Unit tests validate correct extraction of classes/functions for Python and TS files.
+
+### US-4.4: Application Dependency & Relationship Extraction
+
+* **Description:** As the Ingestion Pipeline, I need to extract import statements and package manifests so that CodeGraph can map internal and external dependencies.
+* **Acceptance Criteria:**
+* Parses standard package files (`requirements.txt`, `pyproject.toml`, `package.json`).
+* Traverses AST to extract file-to-file import relationships.
+* Publishes `DependencyDetected` and `RelationshipExtracted` events to the Event Bus.
+
+* **Business Value:** Provides the raw edge data needed to calculate blast radius and dependency risk scores.
+* **Story Points:** 5
+* **Definition of Done:** Pipeline successfully identifies internal cross-file imports and external package dependencies in the sample data repository.
+
+---
+
+## Epic 5: Documentation Ingestion
+  * *Rationale:* Ingests Markdown, Confluence, and ADRs.
+
+## User Story Breakdown
+
+### US-5.1: In-Repository Markdown Parsing
+
+* **Title:** Parse In-Repository Markdown and Emits Events
+* **Description:** As the Ingestion Pipeline, I need to process discovered `.md` files so that their structural content (frontmatter, headers, body) can be normalized and broadcasted to the platform.
+* **Acceptance Criteria:**
+* Worker consumes `FileDiscovered` events (from US-4.2) and filters for Markdown extensions.
+* Parses YAML frontmatter into a structured metadata dictionary.
+* Strips invalid characters and normalizes file paths.
+* Publishes a `DocumentationUpdated` event to the Event Bus containing the normalized text, metadata, and repository provenance.
+
+* **Business Value:** Unlocks architectural knowledge stored directly next to the source code, reducing knowledge silos.
+* **Priority:** High (P0)
+* **Dependencies:** US-3.3 (Event Routing), US-4.2 (Repository Clone Worker).
+* **Technical Notes:** Use `python-frontmatter` or `markdown-it-py`. Ensure the event payload matches the polymorphic `CodeGraphEvent` schema.
+* **Story Points:** 5
+* **Definition of Done:** Integration tests confirm a pushed `.md` file results in a validated `DocumentationUpdated` event in the Kafka topic.
+* **Task Breakdown:**
+1. **Task 1: Build Markdown Parser Utility** Build a Markdown parser utility in etl/connectors/markdown/parser.py and unit test it with valid and malformed files.
+2. **Task 2: Implement FileDiscovered Event Handler** Implement a `FileDiscovered` event handler in `etl/connectors/markdown/worker.py` and test for `DocumentationUpdated` emission.
+
+### US-5.2: Architecture Decision Record (ADR) Extraction
+
+* **Title:** Extract Structured Metadata from ADRs
+* **Description:** As the Ingestion Pipeline, I need to recognize ADR files and specifically extract their context, status, and decisions so that architectural evolution can be tracked as distinct graph entities.
+* **Acceptance Criteria:**
+* Pipeline identifies ADRs using path heuristics (e.g., `docs/adr/`, `architecture/decisions/`).
+* Regex/heuristic parser specifically extracts the "Status" (e.g., Proposed, Accepted, Deprecated) and "Decision" blocks.
+* Emits the specialized `ADRCreated` engineering event.
+
+* **Business Value:** Enables the platform to answer "Why was this database chosen?" and tracks the historical timeline of architectural drift.
+* **Priority:** High (P1)
+* **Dependencies:** US-5.1
+* **Technical Notes:** ADRs often follow the MADR (Markdown Any Decision Record) format. Build the parser to handle standard heading variations.
+* **Story Points:** 3
+* **Definition of Done:** Pipeline successfully identifies an ADR in the sample repo, parses the status, and emits the exact `ADRCreated` event.
+* **Task Breakdown:**
+1. **Task 1: Build ADR-Specific Parsing Logic** Build and unit-test an ADR-specific parser in `etl/connectors/markdown/adr_parser.py` to extract status from MADR templates.
+2. **Task 2: Integrate into Markdown Worker** Integrate the parser into etl/connectors/markdown/worker.py and run E2E tests for event routing.
+
+### US-5.3: Confluence Incremental Sync Connector
+
+* **Title:** Implement Confluence Cloud API Connector
+* **Description:** As a Platform Administrator, I need CodeGraph to periodically sync documents from a specified Confluence Cloud space so that external enterprise tribal knowledge is ingested. *Note: Confluence Data Center (on-prem) is explicitly out of scope for the MVP.*
+* **Acceptance Criteria:**
+* System accepts Confluence Cloud credentials (URL, Email, API Token).
+* Worker queries the Confluence Cloud REST API `/wiki/api/v2/pages` filtered by `lastModified`.
+* Converts Atlassian Document Format (ADF) or HTML to normalized Markdown.
+* Emits `DocumentationUpdated` events.
+
+* **Business Value:** Captures business requirements, meeting notes, and runbooks that do not live in Git repositories, without over-complicating MVP infrastructure with on-premise networking.
+* **Priority:** Medium (P2)
+* **Dependencies:** US-3.1 (Event Bus)
+* **Technical Notes:** Use `atlassian-python-api`. Implement a basic scheduler (e.g., `asyncio` loop or lightweight APScheduler) to trigger the sync every X minutes.
+* **Story Points:** 8
+* **Definition of Done:** Worker successfully paginates through a mock Confluence space, converts HTML to Markdown, and emits events.
+* **Task Breakdown:**
+1. **Task 1: Confluence Cloud API Client Wrapper:** Build HTTP client tailored strictly to Atlassian Cloud authentication headers.
+2. **Task 2: ADF/HTML to Markdown Converter:** Parse Atlassian-specific markup to standard markdown.
+3. **Task 3: Polling Scheduler and State Management:** Implement basic schedule loop to pull incremental changes.
+
+### US-5.4: Document-to-Entity Linking Worker
+
+* **Title:** Heuristic Document Entity Linking (Direct Graph Query)
+* **Description:** As the Knowledge Graph Builder, I need documentation events to contain metadata linking them to recognized code entities (Services, Repos) so I can create edges in the graph.
+* **Acceptance Criteria:**
+* A downstream worker listens to `DocumentationUpdated` and `ADRCreated` events.
+* Worker extracts potential entity names/aliases from the document text and frontmatter.
+* Worker directly executes a read-only Cypher query against Neo4j to verify if the entity exists.
+* If verified, publishes a `DocumentationLinked` event containing the `doc_id` and the matched Neo4j `node_id`.
+
+* **Business Value:** Creates the crucial connective tissue between text and code with 100% data consistency, enabling accurate GraphRAG queries.
+* **Priority:** High (P1)
+* **Dependencies:** US-5.1, US-5.2, Epic 1 (Neo4j Connection)
+* **Story Points:** 5
+* **Definition of Done:** The worker successfully matches a Confluence page mentioning "AuthService" to the internal AuthService entity ID and publishes the linkage event.
+* **Task Breakdown:**
+1. **Task 1: Implement Neo4j Entity Lookup Service:** Create a read-only Cypher utility in `etl/graph_builder/lookup.py` optimized for batch matching alias names to node IDs.
+2. **Task 2: Linkage Processor & Event Emitter:** Create the worker that listens to doc events, calls the lookup service, and emits `DocumentationLinked` if a match is found in the database.
+
+---
+
+## Epic 6: Knowledge Graph Builder
+  * *Rationale:* Moved up. Takes the parsed data from Epics 4/5 and translates it into deterministic Neo4j nodes/edges *before* we do any semantic vectorization.
+
+---
+
+
+### US-6.1: Define and Apply Expanded Graph Schema (V2)
+
+**Description:** Apply Neo4j unique constraints for the expanded code and documentation ontology to prevent duplicate nodes during asynchronous event ingestion.
+**Acceptance Criteria:**
+
+* Unique constraints exist for `Repository`, `File`, `Class`, `Function`, `Document`, and `ADR` labels using the `node_id` property.
+* Epic 0 constraints (`Service`, `API`, `Database`) remain intact and functional.
+* An automated validation script runs in the CI pipeline to verify schema enforcement on an empty database.
+**Business Value:** Ensures structural data integrity at the database level, preventing the AI from hallucinating duplicate architectures.
+**Dependencies:** Epic 1 (Neo4j Infrastructure).
+**Story Points:** 2
+**Definition of Done:** Python constraint application script is updated, executed successfully against the local Docker Neo4j instance, and merged to `main`.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Update Neo4j constraint automation script to include V2 labels | Low | `scripts/apply-neo4j-constraints.py` |
+| Task 2: Update mock data validation script to test new node uniqueness | Low | `scripts/validate-neo4j-schema.py` |
+
+---
+
+### US-6.2: Implement Graph Mutation Service
+
+**Description:** Create a core backend service that wraps the Neo4j Python driver. This service will expose standardized, idempotent methods for Upserting nodes and edges, preventing individual consumers from writing raw Cypher.
+**Acceptance Criteria:**
+
+* Service exposes an `upsert_node(label, properties)` method utilizing Cypher `MERGE`.
+* Service exposes an `upsert_edge(source_id, target_id, rel_type, properties)` method.
+* Edge upserts strictly enforce the inclusion of the provenance fields defined in ADR-026.
+* Deadlocks or transient Neo4j connection errors trigger automatic retries using exponential backoff.
+**Business Value:** Centralizes database write logic, making the system significantly easier to maintain, audit, and secure.
+**Dependencies:** US-6.1.
+**Story Points:** 5
+**Definition of Done:** Unit tests achieve 90%+ coverage on the mutation service, demonstrating successful retries and idempotent writes.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Build the GraphMutationService class with basic `MERGE` templates | Medium | `backend/graph/mutation_service.py` |
+| Task 2: Implement exponential backoff and retry logic for transaction failures | Medium | `backend/core/decorators.py` |
+| Task 3: Write integration tests verifying idempotent node and edge creation | High | `tests/integration/test_graph_mutations.py` |
+
+---
+
+### US-6.3: Code Entity Event Consumer
+
+**Description:** Build the Kafka consumer worker that listens to AST-derived events (`EntityExtracted`, `DependencyDetected`) and uses the Graph Mutation Service to build the structural code graph.
+**Acceptance Criteria:**
+
+* Consumer subscribes to the `events.ingestion.code` topic.
+* `EntityExtracted` events are translated into `File`, `Class`, and `Function` nodes with `CONTAINS` edges.
+* `DependencyDetected` events are translated into `DEPENDS_ON` or `IMPORTS` edges between files or repositories.
+* OpenTelemetry spans (from Epic 2) successfully wrap the consumer execution and database writes.
+**Business Value:** Automatically translates raw repository code into a queryable, connected map of engineering dependencies.
+**Dependencies:** US-6.2, Epic 3 (Event Broker), Epic 4 (AST Events).
+**Story Points:** 8
+**Definition of Done:** End-to-end integration test proves that publishing a mock `EntityExtracted` event results in the correct nodes appearing in Neo4j.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Register the Kafka consumer loop for code events | Medium | `etl/graph_builder/code_consumer.py` |
+| Task 2: Implement the routing logic mapping event schemas to mutation methods | High | `etl/graph_builder/routers.py` |
+| Task 3: Inject OpenTelemetry trace contexts from the event payload into the DB spans | Medium | `etl/graph_builder/telemetry.py` |
+
+---
+
+### US-6.4: Documentation Event Consumer
+
+**Description:** Build the Kafka consumer worker that listens to documentation events (`DocumentationUpdated`, `ADRCreated`, `DocumentationLinked`) and connects enterprise knowledge to the code graph.
+**Acceptance Criteria:**
+
+* Consumer subscribes to the `events.ingestion.docs` topic.
+* `DocumentationUpdated` events generate `Document` nodes.
+* `ADRCreated` events generate `ADR` nodes containing status and decision properties.
+* `DocumentationLinked` events (from US-5.4) generate `DOCUMENTS` edges connecting the text node to the corresponding structural node (e.g., `Service`).
+**Business Value:** Bridges the gap between what the code does and what the engineers wrote about it, preventing knowledge silos.
+**Dependencies:** US-6.2, Epic 5 (Documentation Events).
+**Story Points:** 5
+**Definition of Done:** Querying the local Neo4j database successfully returns an `ADR` node connected via a `DOCUMENTS` edge to a `Service` node.
+
+| Task | Complexity | Expected Files |
+| --- | --- | --- |
+| Task 1: Register the Kafka consumer loop for documentation events | Medium | `etl/graph_builder/doc_consumer.py` |
+| Task 2: Implement edge creation logic specifically for heuristic entity linkages | Medium | `etl/graph_builder/linkage_service.py` |
+
+# Phase 3: Semantic Processing (The Probabilistic Brain)
+
+## Epic 7: Graph-Aware Chunking Framework
+  * *Rationale:* Now that the graph exists, we chunk the code and docs. Because we have the graph, chunks can be tagged with the `node_id` of the service/function they belong to.
+
+---
+
+## Epic 8: Embedding Pipeline & Vector Store
+  * *Rationale:* Generates standard dense embeddings (OpenAI/SentenceTransformers) and stores them in pgvector, linked to the chunks.
+
+---
+
+# Phase 4: Intelligence & Delivery (The User Value)
+
+## Epic 9: Hybrid Retrieval (Graph Traversal + Vector Search)
+  * *Rationale:* Fuses BM25, semantic search, and Cypher queries to assemble context.
+
+---
+
+## Epic 10: RAG Evaluation & Query Engine
+  * *Rationale:* (Split from old Testing Epic). Before exposing this to users, we implement semantic routing and quantitative RAG evaluation (e.g., Ragas/TruLens) to ensure the LLM isn't hallucinating dependencies.
+
+---
+
+## Epic 11: Engineering Intelligence
+  * *Rationale:* Builds the specific business logic (Dependency Risk Score, Blast Radius, Architecture Drift) utilizing the Query Engine.
+
+---
+
+## Epic 12: Frontend Experience (Web UI)
+  * *Rationale:* Consumes the APIs to build the React/Next.js dashboard, Graph visualization, and Chat UI.
+
+---
+
+# Phase 5: Enterprise Scale & Governance (Production Readiness)
+
+## Epic 13: Production Readiness & Deployment
+  * *Rationale:* Hardening, Kubernetes manifests, security scanning, and final MVP launch.
+
+---
+
+## Epic 14: Version-Aware Knowledge Management
+  * *Rationale:* Advanced feature to track temporal shifts (Branch A vs. Branch B).
+
+---
+
+## Epic 15: Knowledge Governance & Security
+  * *Rationale:* Handling RBAC, data permissions, and source provenance.
+
+---
+
+## Epic 16: Plugin Framework & Connectors
+  * *Rationale:* SDK to allow enterprise teams to write custom Jira/Notion plugins.
+
+---
+
+## Epic 17: Platform SDK & Analytics
+  * *Rationale:* Releasing the Python/TS SDKs for developers, alongside platform usage analytics dashboards.
+</file>
+
+<file path="docker-compose.yml">
+# docker-compose.yml
+# This docker-compose file defines a multi-container application with three services:
+# web, neo4j, and postgres. The web service is built from the local Dockerfile and
+# depends on the neo4j and postgres services. The neo4j service uses the official Neo4j
+# image with the APOC plugin enabled, while the postgres service uses a custom image
+# that includes pgvector support. Each service has its own environment variables and
+# volume mappings for data persistence.
+# version: "3.8"
+services:
+  web:
+    build: .
+    container_name: codegraph-api
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-codegraph_secret}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-codegraph_secret}@postgres:5432/${POSTGRES_DB:-codegraph}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: always
+  neo4j:
+    image: neo4j:5.15-enterprise
+    container_name: codegraph-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-codegraph_secret}
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    volumes:
+      - ./.docker-data/neo4j/data:/data
+      - ./.docker-data/neo4j/logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-codegraph_secret} 'RETURN 1;' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: codegraph-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-codegraph_secret}
+      - POSTGRES_DB=${POSTGRES_DB:-codegraph}
+    volumes:
+      - ./.docker-data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-codegraph}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: codegraph-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC (Backend Exporter target)
+      - "4318:4318"   # OTLP HTTP
+    restart: unless-stopped
+  kafka:
+    image: apache/kafka:3.7.2
+    container_name: codegraph-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+    volumes:
+      - ./.docker-data/kafka:/apache/kafka
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: codegraph-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=CodeGraph-Local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    depends_on:
+      - kafka
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+  api:
+    build: .
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - neo4j
+  worker:
+    build: .
+    # command: arq backend.worker.WorkerSettings
+    command: ["uv", "run", "arq", "backend.worker.WorkerSettings"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    volumes:
+      # Required if we want to test locally without rebuilding images
+      - .:/app
+      - /app/.venv
+volumes:
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  postgres_data:
+    driver: local
+  kafka_data:
+    driver: local
+</file>
+
+<file path="pyproject.toml">
+[project]
+name = "codegraph"
+version = "0.1.0"
+description = "Enterprise AI-Augmented Engineering Platform"
+readme = "README.md"
+authors = [
+    { name = "Krishna Kant", email = "kantkrishna@hotmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "aiokafka>=0.14.0",
+    "arq>=0.28.0",
+    "fastapi>=0.141.1",
+    "httpx2>=2.10.0",
+    "neo4j>=6.2.0",
+    "opentelemetry-api>=1.44.0",
+    "opentelemetry-exporter-otlp>=1.44.0",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+    "opentelemetry-sdk>=1.44.0",
+    "pgvector>=0.5.0",
+    "prometheus-client>=0.26.0",
+    "psycopg2-binary>=2.9.12",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "redis>=5.3.1",
+    "sqlalchemy>=2.0.51",
+    "structlog>=26.1.0",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-python>=0.25.0",
+    "tree-sitter-typescript>=0.23.2",
+    "uvicorn>=0.52.1",
+]
+
+[project.scripts]
+codegraph = "codegraph:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.3.0",
+    "pyjwt>=2.13.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
+    "pyyaml>=6.0.3",
+    "ruff>=0.16.2",
+    "types-pyyaml>=6.0.12.20260724",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"] # PEP8, Pyflakes, isort, pyupgrade
+ignore = []
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+disallow_untyped_defs = true
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.coverage.run]
+omit = [
+    "scripts/*",
+]
+</file>
+
+</files>

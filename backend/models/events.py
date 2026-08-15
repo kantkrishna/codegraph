@@ -36,5 +36,6 @@ class RelationshipExtracted(BaseModel):
 class DependencyDetected(BaseModel):
     repository_id: int
     file_path: str
+    package_manager: str
     package_name: str
     version_constraint: str | None = None

@@ -33,7 +33,10 @@
     "useGitignore": true,
     "useDotIgnore": true,
     "useDefaultPatterns": true,
-    "customPatterns": []
+    "customPatterns": [
+      "**/test/**",
+      "**/tests/**"
+    ]
   },
   "security": {
     "enableSecurityCheck": false

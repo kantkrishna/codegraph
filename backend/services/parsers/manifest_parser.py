@@ -29,6 +29,7 @@ class ManifestParser:
                         DependencyDetected(
                             repository_id=repo_id,
                             file_path=file_path,
+                            package_manager="pip",  # <-- Added package_manager
                             package_name=pkg_name,
                             version_constraint=constraint,
                         )
@@ -44,6 +45,7 @@ class ManifestParser:
                                 DependencyDetected(
                                     repository_id=repo_id,
                                     file_path=file_path,
+                                    package_manager="npm",  # <-- Added package_manager
                                     package_name=pkg,
                                     version_constraint=ver,
                                 )
