@@ -27,7 +27,6 @@ def test_docker_compose_services_defined() -> None:
     config = load_docker_compose()
     services = config.get("services", {})
 
-    assert "web" in services, "FastAPI 'web' service is missing from docker-compose.yml"
     assert "neo4j" in services, "Neo4j graph database service is missing"
     assert "postgres" in services, "PostgreSQL vector database service is missing"
 

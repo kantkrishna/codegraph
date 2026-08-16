@@ -3,8 +3,11 @@
 # This file manages the async connection to the Apache Kafka broker.
 
 import logging
+import os
 
 from aiokafka import AIOKafkaProducer
+
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +32,16 @@ class EventBroker:
     async def connect(self) -> None:
         """Initialize the Kafka producer and connect to the broker."""
         try:
-            logger.info(f"Connecting to event broker at {self.bootstrap_servers}...")
-            self._producer = AIOKafkaProducer(bootstrap_servers=self.bootstrap_servers)
+            # 1. Force resolution from the OS environment to ensure Docker networking works
+            bootstrap_servers = (
+                os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+                or os.getenv("KAFKA_URL")
+                or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+            )
+
+            print(f"Connecting to event broker at {bootstrap_servers}...")
+
+            self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
             await self._producer.start()
             self._connected = True
             logger.info("Successfully connected to event broker.")

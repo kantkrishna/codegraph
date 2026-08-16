@@ -1,5 +1,5 @@
 # backend/services/parsers/python_parser.py
-#
+
 # Implements resilient Tree-sitter AST extraction for Python files using DFS traversal.
 
 from typing import Any
@@ -15,7 +15,6 @@ class PythonParser(BaseASTParser):
     def __init__(self) -> None:
         self.language = Language(tspy.language())
         self.parser = Parser(self.language)
-        # Bypassing the volatile Query API in favor of stable AST traversal
 
     def parse(
         self, source_code: bytes, repo_id: int, file_path: str
@@ -29,7 +28,10 @@ class PythonParser(BaseASTParser):
             if node.type == "class_definition":
                 for child in node.children:
                     if child.type == "identifier":
-                        text = child.text.decode("utf-8") if child.text else ""
+                        # Bulletproof byte-slicing (Immune to node.text API changes)
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         entities.append(
                             EntityExtracted(
                                 repository_id=repo_id,
@@ -44,7 +46,9 @@ class PythonParser(BaseASTParser):
             elif node.type == "function_definition":
                 for child in node.children:
                     if child.type == "identifier":
-                        text = child.text.decode("utf-8") if child.text else ""
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         entities.append(
                             EntityExtracted(
                                 repository_id=repo_id,
@@ -55,12 +59,14 @@ class PythonParser(BaseASTParser):
                         )
                         break
 
-            # 3. Extract Standard Imports (e.g., import os, sys)
+            # 3. Extract Standard Imports
             elif node.type == "import_statement":
 
                 def extract_dotted(n: Any) -> None:
                     if n.type == "dotted_name":
-                        text = n.text.decode("utf-8") if n.text else ""
+                        text = source_code[n.start_byte : n.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         relationships.append(
                             RelationshipExtracted(
                                 repository_id=repo_id,
@@ -75,11 +81,13 @@ class PythonParser(BaseASTParser):
 
                 extract_dotted(node)
 
-            # 4. Extract From Imports (e.g., from backend.models import User)
+            # 4. Extract From Imports
             elif node.type == "import_from_statement":
                 for child in node.children:
                     if child.type == "dotted_name":
-                        text = child.text.decode("utf-8") if child.text else ""
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         relationships.append(
                             RelationshipExtracted(
                                 repository_id=repo_id,
@@ -88,12 +96,11 @@ class PythonParser(BaseASTParser):
                                 relationship_type="IMPORTS",
                             )
                         )
-                        break  # Only grab the module name, ignore the imported objects
+                        break
 
             # Continue deep search
             for child in node.children:
                 traverse(child)
 
-        # Trigger the DFS traversal
         traverse(tree.root_node)
         return entities, relationships

@@ -2,11 +2,11 @@
 
 # Routes discovered files to the correct AST or Manifest parser and publishes events.
 
+import logging
 import os
 from typing import Any
 
-from backend.core.config import settings
-from backend.core.events.broker import EventBroker
+from backend.core.events.broker import event_broker
 from backend.core.events.publisher import EventPublisher
 from backend.models.events import (
     FileDiscovered,
@@ -14,13 +14,14 @@ from backend.models.events import (
 from backend.services.parsers.manifest_parser import ManifestParser
 from backend.services.parsers.python_parser import PythonParser
 
+logger = logging.getLogger(__name__)
+
 # Initialize parsers globally to avoid reloading grammars
 _PY_PARSER = PythonParser()
 _MANIFEST_PARSER = ManifestParser()
 
 # Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
-_broker = EventBroker(settings.REDIS_URL)
-_EVENT_BUS = EventPublisher(_broker)
+_EVENT_BUS = EventPublisher(event_broker)
 
 
 async def publish_event(event: Any) -> None:
@@ -30,11 +31,9 @@ async def publish_event(event: Any) -> None:
     # Determine the correct topic based on the event type
     topic = "events.knowledge.extracted"
 
-    # Serialize the Pydantic model to JSON bytes
-    payload = event.model_dump_json().encode("utf-8")
-
-    # Publish to the durable Event Bus
-    await _EVENT_BUS.publish(topic, payload)
+    # Pass the raw Pydantic event object, NOT serialized bytes.
+    # EventPublisher.publish() handles the model_dump_json() serialization securely.
+    await _EVENT_BUS.publish(topic, event)
 
 
 async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
@@ -69,6 +68,6 @@ async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None
             for rel in relationships:
                 await publish_event(rel)
 
-    except Exception:
-        # Resilient processing: Ignore malformed files or read errors, proceed to the next
-        pass
+    except Exception as e:
+        # Log the error and continue processing other files
+        logger.error(f"Failed to process discovered file {event.file_path}: {e}")

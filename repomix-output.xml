@@ -127,6 +127,7 @@ etl/
 scripts/
   __init__.py
   apply_neo4j_constraints.py
+  simulate_webhook.py
   validate_neo4j_schema.py
 src/
   codegraph/
@@ -149,152 +150,26 @@ repomix.config.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="etl/graph_builder/code_consumer.py">
-# etl/graph_builder/code_consumer.py
-# This file consumes AST and Dependency events to build the structural code graph.
-from datetime import datetime, timezone
-import os
-from backend.models.events import EntityExtracted, DependencyDetected
-from backend.graph.mutation_service import GraphMutationService
-from etl.graph_builder.telemetry import with_graph_telemetry
-class CodeGraphConsumer:
-    def __init__(self, mutation_service: GraphMutationService) -> None:
-        self.mutation_service = mutation_service
-    @with_graph_telemetry("consume_entity_extracted")
-    async def handle_entity_extracted(self, event: EntityExtracted) -> None:
-        """Translates EntityExtracted events into File, Class/Function nodes & CONTAINS edges."""
-        file_node_id = f"file:{event.repository_id}:{event.file_path}"
-        file_name = os.path.basename(event.file_path)
-        # 1. Upsert the File Node
-        self.mutation_service.upsert_node(
-            "File", {"node_id": file_node_id, "name": file_name, "repository_id": event.repository_id}
-        )
-        # 2. Upsert the Entity Node (Class or Function)
-        entity_node_id = f"{event.entity_type.lower()}:{event.repository_id}:{event.file_path}:{event.name}"
-        self.mutation_service.upsert_node(
-            event.entity_type, 
-            {"node_id": entity_node_id, "name": event.name, "docstring": event.docstring or ""}
-        )
-        # 3. Create the CONTAINS edge
-        provenance = {
-            "source_system": "ast_parser",
-            "source_uri": event.file_path,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        self.mutation_service.upsert_edge(file_node_id, entity_node_id, "CONTAINS", provenance)
-    @with_graph_telemetry("consume_dependency_detected")
-    async def handle_dependency_detected(self, event: DependencyDetected) -> None:
-        """Translates DependencyDetected events into DEPENDS_ON edges."""
-        file_node_id = f"file:{event.repository_id}:{event.file_path}"
-        package_node_id = f"pkg:{event.package_manager}:{event.package_name}"
-        # Ensure target node exists
-        self.mutation_service.upsert_node(
-            "Service", # Fallback ontology for external packages
-            {"node_id": package_node_id, "name": event.package_name}
-        )
-        provenance = {
-            "source_system": "manifest_parser",
-            "source_uri": event.file_path,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "version_constraint": event.version_constraint or ""
-        }
-        self.mutation_service.upsert_edge(file_node_id, package_node_id, "DEPENDS_ON", provenance)
-</file>
-
-<file path="etl/graph_builder/doc_consumer.py">
-# etl/graph_builder/doc_consumer.py
-# This file consumes Documentation events to link text to the architecture graph.
-from backend.domain.events.ingestion import DocumentationUpdatedEvent, ADRCreated, DocumentationLinkedEvent
-from backend.graph.mutation_service import GraphMutationService
-from etl.graph_builder.telemetry import with_graph_telemetry
-class DocGraphConsumer:
-    def __init__(self, mutation_service: GraphMutationService) -> None:
-        self.mutation_service = mutation_service
-    @with_graph_telemetry("consume_documentation_updated")
-    async def handle_documentation_updated(self, event: DocumentationUpdatedEvent) -> None:
-        """Translates DocumentationUpdated into Document nodes."""
-        node_id = f"doc:{event.data.document_url}"
-        name = getattr(event.data, "title", "Untitled Document")
-        self.mutation_service.upsert_node(
-            "Document", 
-            {"node_id": node_id, "name": name, "type": event.data.document_type}
-        )
-    @with_graph_telemetry("consume_adr_created")
-    async def handle_adr_created(self, event: ADRCreated) -> None:
-        """Translates ADRCreated into ADR nodes."""
-        node_id = f"adr:{event.repository}:{event.file_path}"
-        name = event.metadata.get("title", "Untitled ADR") if event.metadata else "Untitled ADR"
-        self.mutation_service.upsert_node(
-            "ADR", 
-            {
-                "node_id": node_id, 
-                "name": name, 
-                "status": event.status or "Unknown", 
-                "decision": event.decision or ""
-            }
-        )
-    @with_graph_telemetry("consume_documentation_linked")
-    async def handle_documentation_linked(self, event: DocumentationLinkedEvent) -> None:
-        """Creates the DOCUMENTS edge between the Document and the structural Node."""
-        provenance = {
-            "source_system": event.source,
-            "source_uri": event.data.doc_id,
-            "timestamp": str(event.time),
-            "confidence": event.data.confidence
-        }
-        self.mutation_service.upsert_edge(
-            event.data.doc_id,
-            event.data.node_id,
-            "DOCUMENTS",
-            provenance
-        )
-</file>
-
-<file path="etl/graph_builder/routers.py">
-# etl/graph_builder/routers.py
-# Registers the Graph Builder consumers with the Event Bus (Kafka/Redis).
-from backend.core.events.consumer import EventConsumer
-from etl.graph_builder.code_consumer import CodeGraphConsumer
-from etl.graph_builder.doc_consumer import DocGraphConsumer
-from backend.graph.mutation_service import GraphMutationService
-def register_graph_consumers(
-    code_consumer: EventConsumer, 
-    doc_consumer: EventConsumer, 
-    mutation_service: GraphMutationService
-) -> None:
-    """Maps Kafka event types to the Graph Consumer methods."""
-    code_graph_handler = CodeGraphConsumer(mutation_service)
-    doc_graph_handler = DocGraphConsumer(mutation_service)
-    # Map Code/AST Events (US-6.3)
-    code_consumer.register("EntityExtracted", code_graph_handler.handle_entity_extracted)
-    code_consumer.register("DependencyDetected", code_graph_handler.handle_dependency_detected)
-    # Map Documentation Events (US-6.4)
-    doc_consumer.register("DocumentationUpdated", doc_graph_handler.handle_documentation_updated)
-    doc_consumer.register("ADRCreated", doc_graph_handler.handle_adr_created)
-    doc_consumer.register("DocumentationLinked", doc_graph_handler.handle_documentation_linked)
-</file>
-
-<file path="etl/graph_builder/telemetry.py">
-# etl/graph_builder/telemetry.py
-# This file provides OpenTelemetry span decorators specifically for Graph writes.
-from functools import wraps
-from typing import Any, Callable, TypeVar, cast
-from opentelemetry import trace
-tracer = trace.get_tracer(__name__)
-F = TypeVar('F', bound=Callable[..., Any])
-def with_graph_telemetry(span_name: str) -> Callable[[F], F]:
-    """Wraps consumer methods with OpenTelemetry spans for tracing DB writes."""
-    def decorator(func: F) -> F:
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            with tracer.start_as_current_span(span_name) as span:
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    span.record_exception(e)
-                    raise
-        return cast(F, wrapper)
-    return decorator
+<file path="scripts/simulate_webhook.py">
+import hashlib
+import hmac
+import json
+import httpx
+SECRET = "super-secret-hmac-key"
+URL = "http://localhost:8000/api/v1/webhooks/github"
+payload = {
+    "ref": "main",
+    "repository": {"id": 999888, "clone_url": "https://github.com/pallets/click.git"},
+}
+payload_bytes = json.dumps(payload).encode("utf-8")
+signature = "sha256=" + hmac.new(SECRET.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+headers = {
+    "X-Hub-Signature-256": signature,
+    "X-GitHub-Event": "push",
+    "Content-Type": "application/json",
+}
+response = httpx.post(URL, content=payload_bytes, headers=headers, timeout=15.0)
+print(f"Response: {response.status_code} - {response.text}")
 </file>
 
 <file path=".github/workflows/ci.yml">
@@ -517,7 +392,9 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 #
 # This file manages the async connection to the Apache Kafka broker.
 import logging
+import os
 from aiokafka import AIOKafkaProducer
+from backend.core.config import settings
 logger = logging.getLogger(__name__)
 class BrokerConnectionError(Exception):
     """Raised when the broker fails to connect."""
@@ -534,8 +411,12 @@ class EventBroker:
     async def connect(self) -> None:
         """Initialize the Kafka producer and connect to the broker."""
         try:
-            logger.info(f"Connecting to event broker at {self.bootstrap_servers}...")
-            self._producer = AIOKafkaProducer(bootstrap_servers=self.bootstrap_servers)
+            # 1. Force resolution from the OS environment to ensure Docker networking works
+            bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS") or os.getenv("KAFKA_URL") or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+            print(f"Connecting to event broker at {bootstrap_servers}...")
+            self._producer = AIOKafkaProducer(
+                bootstrap_servers=bootstrap_servers
+            )
             await self._producer.start()
             self._connected = True
             logger.info("Successfully connected to event broker.")
@@ -1014,58 +895,8 @@ async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None
         pass
 </file>
 
-<file path="backend/services/parsers/manifest_parser.py">
-# backend/services/parsers/manifest_parser.py
-# Parses application manifests (requirements.txt, package.json) for dependencies.
-import json
-import re
-from backend.models.events import DependencyDetected
-class ManifestParser:
-    def parse_manifest(
-        self, content: bytes, repo_id: int, file_path: str
-    ) -> list[DependencyDetected]:
-        text = content.decode("utf-8", errors="ignore")
-        dependencies: list[DependencyDetected] = []
-        if file_path.endswith("requirements.txt"):
-            for line in text.splitlines():
-                line = line.split("#")[0].strip()
-                if not line:
-                    continue
-                # Match package name and version constraints (e.g. fastapi==0.100.0)
-                match = re.match(r"^([a-zA-Z0-9_\-]+)([=><~^]+.*)?$", line)
-                if match:
-                    pkg_name = match.group(1)
-                    constraint = match.group(2) if match.group(2) else None
-                    dependencies.append(
-                        DependencyDetected(
-                            repository_id=repo_id,
-                            file_path=file_path,
-                            package_name=pkg_name,
-                            version_constraint=constraint,
-                        )
-                    )
-        elif file_path.endswith("package.json"):
-            try:
-                data = json.loads(text)
-                for key in ["dependencies", "devDependencies"]:
-                    if key in data:
-                        for pkg, ver in data[key].items():
-                            dependencies.append(
-                                DependencyDetected(
-                                    repository_id=repo_id,
-                                    file_path=file_path,
-                                    package_name=pkg,
-                                    version_constraint=ver,
-                                )
-                            )
-            except json.JSONDecodeError:
-                pass
-        return dependencies
-</file>
-
 <file path="backend/services/parsers/python_parser.py">
 # backend/services/parsers/python_parser.py
-#
 # Implements resilient Tree-sitter AST extraction for Python files using DFS traversal.
 from typing import Any
 import tree_sitter_python as tspy
@@ -1076,7 +907,6 @@ class PythonParser(BaseASTParser):
     def __init__(self) -> None:
         self.language = Language(tspy.language())
         self.parser = Parser(self.language)
-        # Bypassing the volatile Query API in favor of stable AST traversal
     def parse(
         self, source_code: bytes, repo_id: int, file_path: str
     ) -> tuple[list[EntityExtracted], list[RelationshipExtracted]]:
@@ -1088,7 +918,10 @@ class PythonParser(BaseASTParser):
             if node.type == "class_definition":
                 for child in node.children:
                     if child.type == "identifier":
-                        text = child.text.decode("utf-8") if child.text else ""
+                        # Bulletproof byte-slicing (Immune to node.text API changes)
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         entities.append(
                             EntityExtracted(
                                 repository_id=repo_id,
@@ -1102,7 +935,9 @@ class PythonParser(BaseASTParser):
             elif node.type == "function_definition":
                 for child in node.children:
                     if child.type == "identifier":
-                        text = child.text.decode("utf-8") if child.text else ""
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         entities.append(
                             EntityExtracted(
                                 repository_id=repo_id,
@@ -1112,11 +947,13 @@ class PythonParser(BaseASTParser):
                             )
                         )
                         break
-            # 3. Extract Standard Imports (e.g., import os, sys)
+            # 3. Extract Standard Imports
             elif node.type == "import_statement":
                 def extract_dotted(n: Any) -> None:
                     if n.type == "dotted_name":
-                        text = n.text.decode("utf-8") if n.text else ""
+                        text = source_code[n.start_byte : n.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         relationships.append(
                             RelationshipExtracted(
                                 repository_id=repo_id,
@@ -1129,11 +966,13 @@ class PythonParser(BaseASTParser):
                         for c in n.children:
                             extract_dotted(c)
                 extract_dotted(node)
-            # 4. Extract From Imports (e.g., from backend.models import User)
+            # 4. Extract From Imports
             elif node.type == "import_from_statement":
                 for child in node.children:
                     if child.type == "dotted_name":
-                        text = child.text.decode("utf-8") if child.text else ""
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
                         relationships.append(
                             RelationshipExtracted(
                                 repository_id=repo_id,
@@ -1142,11 +981,10 @@ class PythonParser(BaseASTParser):
                                 relationship_type="IMPORTS",
                             )
                         )
-                        break  # Only grab the module name, ignore the imported objects
+                        break
             # Continue deep search
             for child in node.children:
                 traverse(child)
-        # Trigger the DFS traversal
         traverse(tree.root_node)
         return entities, relationships
 </file>
@@ -1746,6 +1584,110 @@ class MarkdownWorker:
 
 </file>
 
+<file path="etl/graph_builder/code_consumer.py">
+# etl/graph_builder/code_consumer.py
+# This file consumes AST and Dependency events to build the structural code graph.
+import os
+from datetime import UTC, datetime
+from backend.graph.mutation_service import GraphMutationService
+from backend.models.events import DependencyDetected, EntityExtracted
+from etl.graph_builder.telemetry import with_graph_telemetry
+class CodeGraphConsumer:
+    def __init__(self, mutation_service: GraphMutationService) -> None:
+        self.mutation_service = mutation_service
+    @with_graph_telemetry("consume_entity_extracted")
+    async def handle_entity_extracted(self, event: EntityExtracted) -> None:
+        """Translates EntityExtracted events into File, Class/Function nodes & CONTAINS edges."""
+        file_node_id = f"file:{event.repository_id}:{event.file_path}"
+        file_name = os.path.basename(event.file_path)
+        # 1. Upsert the File Node
+        self.mutation_service.upsert_node(
+            "File",
+            {"node_id": file_node_id, "name": file_name, "repository_id": event.repository_id},
+        )
+        # 2. Upsert the Entity Node (Class or Function)
+        entity_node_id = (
+            f"{event.entity_type.lower()}:{event.repository_id}:{event.file_path}:{event.name}"  # noqa: E501
+        )
+        self.mutation_service.upsert_node(
+            event.entity_type,
+            {"node_id": entity_node_id, "name": event.name, "docstring": event.docstring or ""},
+        )
+        # 3. Create the CONTAINS edge
+        provenance = {
+            "source_system": "ast_parser",
+            "source_uri": event.file_path,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        self.mutation_service.upsert_edge(file_node_id, entity_node_id, "CONTAINS", provenance)
+    @with_graph_telemetry("consume_dependency_detected")
+    async def handle_dependency_detected(self, event: DependencyDetected) -> None:
+        """Translates DependencyDetected events into DEPENDS_ON edges."""
+        file_node_id = f"file:{event.repository_id}:{event.file_path}"
+        package_node_id = f"pkg:{event.package_manager}:{event.package_name}"
+        # Ensure target node exists
+        self.mutation_service.upsert_node(
+            "Service",  # Fallback ontology for external packages
+            {"node_id": package_node_id, "name": event.package_name},
+        )
+        provenance = {
+            "source_system": "manifest_parser",
+            "source_uri": event.file_path,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "version_constraint": event.version_constraint or "",
+        }
+        self.mutation_service.upsert_edge(file_node_id, package_node_id, "DEPENDS_ON", provenance)
+</file>
+
+<file path="etl/graph_builder/doc_consumer.py">
+# etl/graph_builder/doc_consumer.py
+# This file consumes Documentation events to link text to the architecture graph.
+from backend.domain.events.ingestion import (
+    ADRCreated,
+    DocumentationLinkedEvent,
+    DocumentationUpdatedEvent,
+)
+from backend.graph.mutation_service import GraphMutationService
+from etl.graph_builder.telemetry import with_graph_telemetry
+class DocGraphConsumer:
+    def __init__(self, mutation_service: GraphMutationService) -> None:
+        self.mutation_service = mutation_service
+    @with_graph_telemetry("consume_documentation_updated")
+    async def handle_documentation_updated(self, event: DocumentationUpdatedEvent) -> None:
+        """Translates DocumentationUpdated into Document nodes."""
+        node_id = f"doc:{event.data.document_url}"
+        name = getattr(event.data, "title", "Untitled Document")
+        self.mutation_service.upsert_node(
+            "Document", {"node_id": node_id, "name": name, "type": event.data.document_type}
+        )
+    @with_graph_telemetry("consume_adr_created")
+    async def handle_adr_created(self, event: ADRCreated) -> None:
+        """Translates ADRCreated into ADR nodes."""
+        node_id = f"adr:{event.repository}:{event.file_path}"
+        name = event.metadata.get("title", "Untitled ADR") if event.metadata else "Untitled ADR"
+        self.mutation_service.upsert_node(
+            "ADR",
+            {
+                "node_id": node_id,
+                "name": name,
+                "status": event.status or "Unknown",
+                "decision": event.decision or "",
+            },
+        )
+    @with_graph_telemetry("consume_documentation_linked")
+    async def handle_documentation_linked(self, event: DocumentationLinkedEvent) -> None:
+        """Creates the DOCUMENTS edge between the Document and the structural Node."""
+        provenance = {
+            "source_system": event.source,
+            "source_uri": event.data.doc_id,
+            "timestamp": str(event.time),
+            "confidence": event.data.confidence,
+        }
+        self.mutation_service.upsert_edge(
+            event.data.doc_id, event.data.node_id, "DOCUMENTS", provenance
+        )
+</file>
+
 <file path="etl/graph_builder/doc_linker.py">
 # etl/graph_builder/doc_linker.py
 # Downstream worker that inspects document events and links them to the Graph (US-5.4).
@@ -1814,6 +1756,54 @@ class Neo4jEntityLookupService:
             if record:
                 return str(record["node_id"])
         return None
+</file>
+
+<file path="etl/graph_builder/routers.py">
+# etl/graph_builder/routers.py
+# Registers the Graph Builder consumers with the Event Bus (Kafka/Redis).
+from backend.core.events.consumer import EventConsumer
+from backend.graph.mutation_service import GraphMutationService
+from etl.graph_builder.code_consumer import CodeGraphConsumer
+from etl.graph_builder.doc_consumer import DocGraphConsumer
+def register_graph_consumers(
+    code_consumer: EventConsumer,
+    doc_consumer: EventConsumer,
+    mutation_service: GraphMutationService,
+) -> None:
+    """Maps Kafka event types to the Graph Consumer methods."""
+    code_graph_handler = CodeGraphConsumer(mutation_service)
+    doc_graph_handler = DocGraphConsumer(mutation_service)
+    # Map Code/AST Events (US-6.3)
+    code_consumer.register("EntityExtracted", code_graph_handler.handle_entity_extracted)
+    code_consumer.register("DependencyDetected", code_graph_handler.handle_dependency_detected)
+    # Map Documentation Events (US-6.4)
+    doc_consumer.register("DocumentationUpdated", doc_graph_handler.handle_documentation_updated)
+    doc_consumer.register("ADRCreated", doc_graph_handler.handle_adr_created)
+    doc_consumer.register("DocumentationLinked", doc_graph_handler.handle_documentation_linked)
+</file>
+
+<file path="etl/graph_builder/telemetry.py">
+# etl/graph_builder/telemetry.py
+# This file provides OpenTelemetry span decorators specifically for Graph writes.
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, TypeVar, cast
+from opentelemetry import trace
+tracer = trace.get_tracer(__name__)
+F = TypeVar("F", bound=Callable[..., Any])
+def with_graph_telemetry(span_name: str) -> Callable[[F], F]:
+    """Wraps consumer methods with OpenTelemetry spans for tracing DB writes."""
+    def decorator(func: F) -> F:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with tracer.start_as_current_span(span_name) as span:
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    span.record_exception(e)
+                    raise
+        return cast(F, wrapper)
+    return decorator
 </file>
 
 <file path="etl/scheduler/confluence_sync.py">
@@ -2199,56 +2189,6 @@ Apache License
    limitations under the License.
 </file>
 
-<file path="repomix.config.json">
-{
-  "$schema": "https://repomix.com/schemas/latest/schema.json",
-  "input": {
-    "maxFileSize": 52428800
-  },
-  "output": {
-    "filePath": "repomix-output.xml",
-    "style": "xml",
-    "filePathStyle": "target-relative",
-    "parsableStyle": false,
-    "fileSummary": true,
-    "directoryStructure": true,
-    "files": true,
-    "removeComments": false,
-    "removeEmptyLines": true,
-    "compress": false,
-    "topFilesLength": 5,
-    "showLineNumbers": false,
-    "truncateBase64": false,
-    "copyToClipboard": false,
-    "includeFullDirectoryStructure": false,
-    "tokenCountTree": false,
-    "git": {
-      "sortByChanges": true,
-      "sortByChangesMaxCommits": 100,
-      "includeDiffs": false,
-      "includeLogs": false,
-      "includeLogsCount": 50
-    }
-  },
-  "include": [],
-  "ignore": {
-    "useGitignore": true,
-    "useDotIgnore": true,
-    "useDefaultPatterns": true,
-    "customPatterns": [
-      "**/test/**",
-      "**/tests/**"
-    ]
-  },
-  "security": {
-    "enableSecurityCheck": false
-  },
-  "tokenCount": {
-    "encoding": "o200k_base"
-  }
-}
-</file>
-
 <file path="backend/api/main.py">
 # backend/api/main.py
 # This file defines the main FastAPI application instance. It sets up the application,
@@ -2286,13 +2226,18 @@ class Settings(BaseSettings):
     GITHUB_WEBHOOK_SECRET: SecretStr = SecretStr("")
     # Redis Worker
     REDIS_URL: str = "redis://localhost:6379"
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 settings = Settings()
 </file>
 
 <file path="backend/core/telemetry.py">
 # backend/core/telemetry.py
 # This file configures OpenTelemetry for distributed tracing across the platform.
+import os
 from typing import Any
 from fastapi import FastAPI
 from opentelemetry import trace
@@ -2302,12 +2247,13 @@ from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+from opentelemetry.util._once import Once
 def setup_telemetry(
     app: FastAPI, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
 ) -> None:
     """Initializes OpenTelemetry tracing and instruments the FastAPI app (AC 1 & 2)."""
+    # --- THE RESTORED IDEMPOTENCY BLOCK ---
     current_provider = trace.get_tracer_provider()
-    # Idempotency: If it's already an active SDK provider, just append the exporter
     if hasattr(current_provider, "add_span_processor"):
         if exporter is not None:
             current_provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -2316,20 +2262,32 @@ def setup_telemetry(
         except Exception:
             pass
         return
+    # --------------------------------------
+    # 1. Create a new TracerProvider for the service
     resource = Resource(attributes={SERVICE_NAME: service_name})
     sdk_provider = TracerProvider(resource=resource)
     if exporter is None:
-        # Production/Local Docker route: OTLP exporter pushing to Jaeger (AC 4)
-        otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
+        # Production/Local Docker route: OTLP exporter pushing to Jaeger
+        endpoint = os.getenv("OTLP_ENDPOINT", "http://localhost:4317")
+        otlp_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
         processor: Any = BatchSpanProcessor(otlp_exporter)
     else:
         # Testing route: pushes spans to memory sequentially
         processor = SimpleSpanProcessor(exporter)
     sdk_provider.add_span_processor(processor)
-    # FORCE override the global provider to bypass NoOp locks and warnings during testing
-    setattr(trace, "_TRACER_PROVIDER", sdk_provider)
+    # 2. Reset OTEL lock to allow overriding the provider during Pytest runs
+    if hasattr(trace, "_TRACER_PROVIDER_SET_ONCE"):
+        trace._TRACER_PROVIDER_SET_ONCE = Once()
+    # 3. Safely set global provider so ProxyTracers correctly route to it
+    trace.set_tracer_provider(sdk_provider)
+    # 4. Instrument the app securely
     try:
-        # AC 2: Instrument FastAPI to capture all incoming HTTP requests
+        # Uninstrument first to prevent Duplicate Instrumentation warnings in Pytest
+        FastAPIInstrumentor().uninstrument_app(app)
+    except Exception:
+        pass
+    try:
+        # Re-instrument with the newly attached provider
         FastAPIInstrumentor().instrument_app(app)
     except Exception:
         pass
@@ -2407,35 +2365,55 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 </file>
 
-<file path="backend/models/events.py">
-# backend/models/events.py
-#
-# This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
-from pydantic import BaseModel, Field
-class RepositoryIngestionRequested(BaseModel):
-    repository_url: str
-    repository_id: int
-    branch: str
-class FileDiscovered(BaseModel):
-    repository_id: int
-    file_path: str
-    language: str
-class EntityExtracted(BaseModel):
-    repository_id: int
-    file_path: str
-    entity_type: str = Field(..., description="Class, Function, Interface, etc.")
-    name: str
-    docstring: str | None = None
-class RelationshipExtracted(BaseModel):
-    repository_id: int
-    source_file: str
-    target_module: str
-    relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
-class DependencyDetected(BaseModel):
-    repository_id: int
-    file_path: str
-    package_name: str
-    version_constraint: str | None = None
+<file path="backend/services/parsers/manifest_parser.py">
+# backend/services/parsers/manifest_parser.py
+# Parses application manifests (requirements.txt, package.json) for dependencies.
+import json
+import re
+from backend.models.events import DependencyDetected
+class ManifestParser:
+    def parse_manifest(
+        self, content: bytes, repo_id: int, file_path: str
+    ) -> list[DependencyDetected]:
+        text = content.decode("utf-8", errors="ignore")
+        dependencies: list[DependencyDetected] = []
+        if file_path.endswith("requirements.txt"):
+            for line in text.splitlines():
+                line = line.split("#")[0].strip()
+                if not line:
+                    continue
+                # Match package name and version constraints (e.g. fastapi==0.100.0)
+                match = re.match(r"^([a-zA-Z0-9_\-]+)([=><~^]+.*)?$", line)
+                if match:
+                    pkg_name = match.group(1)
+                    constraint = match.group(2) if match.group(2) else None
+                    dependencies.append(
+                        DependencyDetected(
+                            repository_id=repo_id,
+                            file_path=file_path,
+                            package_manager="pip",  # <-- Added package_manager
+                            package_name=pkg_name,
+                            version_constraint=constraint,
+                        )
+                    )
+        elif file_path.endswith("package.json"):
+            try:
+                data = json.loads(text)
+                for key in ["dependencies", "devDependencies"]:
+                    if key in data:
+                        for pkg, ver in data[key].items():
+                            dependencies.append(
+                                DependencyDetected(
+                                    repository_id=repo_id,
+                                    file_path=file_path,
+                                    package_manager="npm",  # <-- Added package_manager
+                                    package_name=pkg,
+                                    version_constraint=ver,
+                                )
+                            )
+            except json.JSONDecodeError:
+                pass
+        return dependencies
 </file>
 
 <file path="backend/services/git_service.py">
@@ -2481,12 +2459,22 @@ async def clone_and_process_repository(clone_url: str, repo_id: int, branch: str
 from typing import Any
 from arq.connections import RedisSettings
 from backend.core.config import settings
+from backend.core.events.broker import event_broker
+from backend.core.logger import setup_logging
 from backend.services.git_service import clone_and_process_repository
 async def clone_repository_task(
     ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
 ) -> None:
     """ARQ Task wrapper for repository cloning."""
     await clone_and_process_repository(clone_url, repo_id, branch)
+# Define the startup hook
+async def startup(ctx: dict[str, Any]) -> None:
+    setup_logging()
+    # Initialize the Kafka producer for the worker process
+    await event_broker.connect()
+# Ensure clean disconnection on worker termination
+async def shutdown(ctx: dict[str, Any]) -> None:
+    await event_broker.disconnect()
 class WorkerSettings:
     """Configuration for the ARQ worker process."""
     functions = [clone_repository_task]
@@ -2495,6 +2483,8 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     max_jobs = 10
     job_timeout = 600  # 10 minutes max for cloning massive repos
+    on_startup = startup
+    on_shutdown = shutdown
 # To run the worker:
 # `arq backend.worker.WorkerSettings`
 </file>
@@ -2514,6 +2504,9 @@ __pycache__
 #for a Python application.
 
 FROM python:3.12-slim
+
+# Install system dependencies (git is required for repository cloning)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 # Copy the uv executable directly from the official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
@@ -2550,6 +2543,56 @@ This project uses `uv` for dependency management.
 1. Install `uv`: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. Sync dependencies: `uv sync`
 3. Activate virtual environment: `source .venv/bin/activate`
+</file>
+
+<file path="repomix.config.json">
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "input": {
+    "maxFileSize": 52428800
+  },
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "filePathStyle": "target-relative",
+    "parsableStyle": false,
+    "fileSummary": true,
+    "directoryStructure": true,
+    "files": true,
+    "removeComments": false,
+    "removeEmptyLines": true,
+    "compress": false,
+    "topFilesLength": 5,
+    "showLineNumbers": false,
+    "truncateBase64": false,
+    "copyToClipboard": false,
+    "includeFullDirectoryStructure": false,
+    "tokenCountTree": false,
+    "git": {
+      "sortByChanges": true,
+      "sortByChangesMaxCommits": 100,
+      "includeDiffs": false,
+      "includeLogs": false,
+      "includeLogsCount": 50
+    }
+  },
+  "include": [],
+  "ignore": {
+    "useGitignore": true,
+    "useDotIgnore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "**/test/**",
+      "**/tests/**"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": false
+  },
+  "tokenCount": {
+    "encoding": "o200k_base"
+  }
+}
 </file>
 
 <file path="backend/domain/events/ingestion.py">
@@ -2637,6 +2680,38 @@ def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
     return _event_adapter.validate_python(payload)
 </file>
 
+<file path="backend/models/events.py">
+# backend/models/events.py
+#
+# This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
+from pydantic import BaseModel, Field
+class RepositoryIngestionRequested(BaseModel):
+    repository_url: str
+    repository_id: int
+    branch: str
+class FileDiscovered(BaseModel):
+    repository_id: int
+    file_path: str
+    language: str
+class EntityExtracted(BaseModel):
+    repository_id: int
+    file_path: str
+    entity_type: str = Field(..., description="Class, Function, Interface, etc.")
+    name: str
+    docstring: str | None = None
+class RelationshipExtracted(BaseModel):
+    repository_id: int
+    source_file: str
+    target_module: str
+    relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
+class DependencyDetected(BaseModel):
+    repository_id: int
+    file_path: str
+    package_manager: str
+    package_name: str
+    version_constraint: str | None = None
+</file>
+
 <file path="Makefile">
 .PHONY: help install test test-unit typecheck lint lint-fix format docker-up docker-down clean
 
@@ -2692,24 +2767,41 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 	find . -type d -name ".ruff_cache" -exec rm -rf {} +
+
+clean-ps:
+	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
 </file>
 
 <file path="backend/main.py">
 # backend/main.py
-#
 # This file defines the main FastAPI application instance.
+import contextlib
+from collections.abc import AsyncIterator
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 from backend.api.middleware.logging_middleware import LoggingMiddleware
 from backend.api.middleware.metrics_middleware import MetricsMiddleware
-from backend.api.routers import system, webhooks
+# Import the health router
+from backend.api.routers import health, system, webhooks
+from backend.core.config import settings
 from backend.core.logger import setup_logging
 from backend.core.telemetry import setup_telemetry
 # Initialize structured logging before app startup
 setup_logging()
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Startup: Initialize ARQ Redis pool and attach to app state
+    app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    yield
+    # Shutdown: Close Redis connection
+    if hasattr(app.state, "redis"):
+        await app.state.redis.close()
 app = FastAPI(
     title="CodeGraph Enterprise Platform",
     description="Enterprise Developer Intelligence Platform API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 # Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
 app.add_middleware(MetricsMiddleware)
@@ -2719,9 +2811,8 @@ setup_telemetry(app)
 # Register Routers
 app.include_router(system.router)
 app.include_router(webhooks.router)
-@app.get("/health")
-async def health_check() -> dict[str, str]:
-    return {"status": "healthy"}
+# Register the database-checking health router
+app.include_router(health.router)
 </file>
 
 <file path=".gitignore">
@@ -3767,22 +3858,6 @@ Instead of boiling the ocean and indexing an entire enterprise, our MVP will sim
 # volume mappings for data persistence.
 # version: "3.8"
 services:
-  web:
-    build: .
-    container_name: codegraph-api
-    ports:
-      - "8000:8000"
-    environment:
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=${NEO4J_USER:-neo4j}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-codegraph_secret}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-codegraph_secret}@postgres:5432/${POSTGRES_DB:-codegraph}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
-    restart: always
   neo4j:
     image: neo4j:5.15-enterprise
     container_name: codegraph-neo4j
@@ -3828,9 +3903,12 @@ services:
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
-      - "16686:16686" # Jaeger Web UI
-      - "4317:4317"   # OTLP gRPC (Backend Exporter target)
-      - "4318:4318"   # OTLP HTTP
+      # Jaeger Web UI
+      - "16686:16686"
+      # OTLP gRPC (Backend Exporter target)
+      - "4317:4317"
+      # OTLP HTTP
+      - "4318:4318"
     restart: unless-stopped
   kafka:
     image: apache/kafka:3.7.2
@@ -3841,9 +3919,11 @@ services:
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      # FIX: Dual Listeners for Docker Network vs. Host Machine
+      - KAFKA_LISTENERS=INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
     volumes:
       - ./.docker-data/kafka:/apache/kafka
@@ -3854,7 +3934,8 @@ services:
       - "8080:8080"
     environment:
       - KAFKA_CLUSTERS_0_NAME=CodeGraph-Local
-      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      # FIX: Connect via the INTERNAL Docker network listener port
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
     depends_on:
       - kafka
   redis:
@@ -3866,19 +3947,33 @@ services:
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379
+      - NEO4J_URI=bolt://neo4j:7687
+      - DATABASE_URL=postgresql://postgres:codegraph_secret@postgres:5432/codegraph
+      - OTLP_ENDPOINT=http://jaeger:4317
     depends_on:
-      - redis
-      - neo4j
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_started
   worker:
     build: .
     # command: arq backend.worker.WorkerSettings
     command: ["uv", "run", "arq", "backend.worker.WorkerSettings"]
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379
+      - KAFKA_URL=kafka:29092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
     depends_on:
       - redis
+      - kafka
     volumes:
       # Required if we want to test locally without rebuilding images
       - .:/app

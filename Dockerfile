@@ -5,6 +5,9 @@
 
 FROM python:3.12-slim
 
+# Install system dependencies (git is required for repository cloning)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 # Copy the uv executable directly from the official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 

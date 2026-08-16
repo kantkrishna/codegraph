@@ -119,7 +119,6 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
 * **Exact Command**: `curl -s http://localhost:8000/health` (Host Terminal).
 * **Expected Output**: `{"status":"healthy","databases":{"neo4j":"connected","postgres":"connected"}}`.
 
-
 * **PASS**: HTTP 200 OK with both databases reporting "connected".
 * **FAIL**: HTTP 503 or connection timeouts.
 * **Evidence**: Screenshot of the JSON output and the Swagger UI accessible at `http://localhost:8000/docs`.
@@ -127,20 +126,11 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
 #### Test ID: FT-2.0 (Epic 2: Core Observability - Metrics & Logs)
 
 * **Objective**: Validate Prometheus metrics generation and structured JSON logs with Request IDs.
-
-
 * **Preconditions**: FT-1.0 passed.
 * **Exact Command 1 (Metrics)**: `curl -s http://localhost:8000/metrics | grep http_requests_total` (Host Terminal).
 * *Expected Output*: Prometheus counter metrics showing the `/health` endpoint invocations.
-
-
-
-
-* **Exact Command 2 (Logs)**: `docker logs codegraph-api | grep http_request_completed` (Host Terminal).
+* **Exact Command 2 (Logs)**: `docker compose logs api | grep http_request_completed` (Host Terminal).
 * *Expected Output*: A JSON log line containing `request_id`, `method="GET"`, and `status_code=200`.
-
-
-
 
 * **PASS**: Metrics contain data; logs are strict JSON with unique UUIDs per request.
 
@@ -152,34 +142,25 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
 * **Exact Steps**:
 1. Open a browser and navigate to `http://localhost:8080` (Kafka UI).
 
-
 2. Click "Topics".
 
-
 * **PASS**: The Kafka UI loads successfully, showing the `CodeGraph-Local` cluster in a "Healthy" or "Online" state.
-
 
 
 #### Test ID: FT-4.0 (Epic 4: GitHub Webhook & Clone Worker)
 
 * **Objective**: Validate secure GitHub Webhook ingestion (US-4.1) and Ephemeral Repository Cloning (US-4.2).
-
-
 * **Preconditions**: `simulate_webhook.py` script created in Step 3.
 * **Exact Steps & Commands**:
-1. Run the webhook script: `uv run python simulate_webhook.py` (Host Terminal).
+1. Run the webhook script: `uv run python scripts/simulate_webhook.py` (Host Terminal).
 2. Read the API Response.
-3. Immediately view worker logs: `docker logs codegraph-worker | tail -n 20` (Host Terminal).
-
+3. Immediately view worker logs: `docker compose logs worker -f --tail=20` (Host Terminal).
+ | tail -n 20` (Host Terminal).
 
 * **Expected Output**:
 * API Response: `202 - {"status": "accepted", "message": "Ingestion enqueued"}`.
 
-
 * Worker Logs: `Cloning [https://github.com/octocat/Hello-World.git](https://github.com/octocat/Hello-World.git) into ephemeral directory: /tmp/...` followed by `Completed ingestion traversal for 999888. Ephemeral disk cleaning up.`.
-
-
-
 
 * **PASS**: 202 Accepted returned. Logs prove the `arq` worker picked up the task, cloned the repo, and deleted the `/tmp` folder upon completion.
 
@@ -187,27 +168,20 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
 
 * **Objective**: Validate that V1 and V2 Unique Constraints are applied to Neo4j to prevent duplicate entities.
 
-
 * **Exact Command**: `uv run python scripts/apply_neo4j_constraints.py` (Host Terminal).
 * **Expected Output**: Terminal prints `Applying V1 and V2 constraints...` followed by `Constraints applied successfully.`.
 
-
 * **Exact Command (Verification)**: Navigate to `http://localhost:7474` in browser (Neo4j UI). Connect with `neo4j` / `codegraph_secret`. Run Cypher: `SHOW CONSTRAINTS;`
 * **PASS**: The Neo4j UI lists `IS UNIQUE` constraints for labels: `Service`, `Repository`, `File`, `Class`, `Function`, `Document`, and `ADR` on the property `node_id`.
-
-
 
 #### Test ID: FT-6.2 (Epic 6: Graph Mutation Service & Idempotency)
 
 * **Objective**: Prove `upsert_node` and `upsert_edge` enforce ADR-026 provenance and prevent duplicates.
 
-
 * **Exact Command**: `uv run python scripts/validate_neo4j_schema.py` (Host Terminal).
 * **Expected Output**: The script inserts mock V1/V2 data (e.g., `ADR-01: Use Stripe` -> `PaymentService`) using `MERGE` statements.
 
-
 * **PASS**: The terminal outputs `Validation PASSED: V1/V2 Schemas correctly mapped and queried.`.
-
 
 * **Idempotency Proof**: Run the exact same command a second time. Go to Neo4j UI (`http://localhost:7474`), run `MATCH (n) RETURN count(n);`. The count must remain exactly the same as the first run, proving duplicates are not created.
 

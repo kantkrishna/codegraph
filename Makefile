@@ -52,3 +52,6 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 	find . -type d -name ".ruff_cache" -exec rm -rf {} +
+
+clean-ps:
+	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
