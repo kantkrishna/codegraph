@@ -2001,62 +2001,6 @@ def create_app() -> FastAPI:
 app = create_app()
 </file>
 
-<file path="backend/core/events/broker.py">
-# backend/core/events/broker.py
-#
-# This file manages the async connection to the Apache Kafka broker.
-import asyncio
-import logging
-import os
-from aiokafka import AIOKafkaProducer
-from backend.core.config import settings
-logger = logging.getLogger(__name__)
-class BrokerConnectionError(Exception):
-    """Raised when the broker fails to connect."""
-    pass
-class EventBroker:
-    """
-    Manages the lifecycle and connection state of the event broker (Kafka).
-    To be injected into FastAPI lifespan events and Health check routers.
-    """
-    def __init__(self, bootstrap_servers: str) -> None:
-        self.bootstrap_servers = bootstrap_servers
-        self._producer: AIOKafkaProducer | None = None
-        self._connected: bool = False
-    async def connect(self, retries: int = 5, delay: float = 3.0) -> None:
-        """Initialize the Kafka producer and connect to the broker with retries."""
-        bootstrap_servers = (
-            os.getenv("KAFKA_BOOTSTRAP_SERVERS")
-            or os.getenv("KAFKA_URL")
-            or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-        )
-        for attempt in range(1, retries + 1):
-            try:
-                logger.info(f"Connecting to event broker at {bootstrap_servers} (Attempt {attempt}/{retries})...")
-                self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
-                await self._producer.start()
-                self._connected = True
-                logger.info("Successfully connected to event broker.")
-                return
-            except Exception as e:
-                logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
-                if attempt < retries:
-                    await asyncio.sleep(delay)
-                else:
-                    self._connected = False
-                    logger.error("Failed to connect to event broker after maximum retries.")
-                    raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
-    async def disconnect(self) -> None:
-        if self._producer and self._connected:
-            logger.info("Disconnecting from event broker...")
-            await self._producer.stop()
-            self._connected = False
-            logger.info("Successfully disconnected from event broker.")
-    def is_connected(self) -> bool:
-        return self._connected
-event_broker = EventBroker(bootstrap_servers="localhost:9092")
-</file>
-
 <file path="backend/core/config.py">
 # backend/core/config.py
 # This file defines the Pydantic settings for the application, which are loaded from
@@ -2147,66 +2091,6 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-</file>
-
-<file path="backend/services/parsers/factory.py">
-# backend/services/parsers/factory.py
-# Routes discovered files to the correct AST or Manifest parser and publishes events.
-import logging
-import os
-from typing import Any
-from backend.core.events.broker import event_broker
-from backend.core.events.publisher import EventPublisher
-from backend.models.events import (
-    FileDiscovered,
-)
-from backend.services.parsers.manifest_parser import ManifestParser
-from backend.services.parsers.python_parser import PythonParser
-logger = logging.getLogger(__name__)
-# Initialize parsers globally to avoid reloading grammars
-_PY_PARSER = PythonParser()
-_MANIFEST_PARSER = ManifestParser()
-# Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
-_EVENT_BUS = EventPublisher(event_broker)
-async def publish_event(event: Any) -> None:
-    """
-    Serializes the Pydantic event and pushes it to the Epic 3 Event Bus.
-    """
-    # Determine the correct topic based on the event type
-    topic = "events.knowledge.extracted"
-    # Pass the raw Pydantic event object, NOT serialized bytes.
-    # EventPublisher.publish() handles the model_dump_json() serialization securely.
-    await _EVENT_BUS.publish(topic, event)
-async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
-    """
-    Reads the file from disk, parses its AST or Manifest, and emits structural events.
-    """
-    full_path = os.path.join(clone_dir, event.file_path)
-    if not os.path.exists(full_path):
-        return
-    try:
-        # Move the open() inside the try block to safely handle read errors
-        with open(full_path, "rb") as f:
-            source_code = f.read()
-        # 1. Process Package Manifests (US-4.4)
-        if event.file_path.endswith(("requirements.txt", "package.json")):
-            deps = _MANIFEST_PARSER.parse_manifest(
-                source_code, event.repository_id, event.file_path
-            )
-            for dep in deps:
-                await publish_event(dep)
-        # 2. Process Python ASTs (US-4.3 & US-4.4)
-        elif event.language in ("py", "python"):
-            entities, relationships = _PY_PARSER.parse(
-                source_code, event.repository_id, event.file_path
-            )
-            for ent in entities:
-                await publish_event(ent)
-            for rel in relationships:
-                await publish_event(rel)
-    except Exception as e:
-        # Log the error and continue processing other files
-        logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)
 </file>
 
 <file path="backend/services/parsers/manifest_parser.py">
@@ -2460,49 +2344,60 @@ This project uses `uv` for dependency management.
 }
 </file>
 
-<file path="backend/core/telemetry.py">
-# backend/core/telemetry.py
-# This file configures OpenTelemetry for distributed tracing across the platform.
-# backend/core/telemetry.py
-import os
+<file path="backend/core/events/broker.py">
+# backend/core/events/broker.py
+#
+# This file manages the async connection to the Apache Kafka broker.
+import asyncio
 import logging
-from typing import Any
-from fastapi import FastAPI
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+import os
+from aiokafka import AIOKafkaProducer
+from backend.core.config import settings
 logger = logging.getLogger(__name__)
-def setup_telemetry(
-    app: FastAPI | None = None, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
-) -> None:
-    try:
-        # 1. Create Resource and Provider unconditionally
-        resource = Resource(attributes={SERVICE_NAME: service_name})
-        sdk_provider = TracerProvider(resource=resource)
-        # 2. Add Exporter
-        if exporter is None:
-            endpoint = os.getenv("OTLP_ENDPOINT", "http://jaeger:4318/v1/traces")
-            otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
-            # Flush every 1000ms instead of 5000ms for rapid local observability
-            processor: Any = BatchSpanProcessor(otlp_exporter, schedule_delay_millis=1000)
-        else:
-            processor = SimpleSpanProcessor(exporter)
-        sdk_provider.add_span_processor(processor)
-        # 3. Force override global provider
-        trace.set_tracer_provider(sdk_provider)
-        # 4. Instrument FastAPI explicitly if provided
-        if app is not None:
-            FastAPIInstrumentor().uninstrument_app(app)
-            FastAPIInstrumentor().instrument_app(app, tracer_provider=sdk_provider)
-        logger.info(f"OpenTelemetry successfully initialized for {service_name}")
-    except Exception as e:
-        logger.error(f"Failed to initialize OpenTelemetry: {e}", exc_info=True)
-def instrument_db_engine(engine: Any) -> None:
-    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
+class BrokerConnectionError(Exception):
+    pass
+class EventBroker:
+    def __init__(self, bootstrap_servers: str) -> None:
+        self.bootstrap_servers = bootstrap_servers
+        self._producer: AIOKafkaProducer | None = None
+        self._connected: bool = False
+    async def connect(self, retries: int = 5, delay: float = 3.0) -> None:
+        bootstrap_servers = (
+            os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+            or os.getenv("KAFKA_URL")
+            or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        )
+        for attempt in range(1, retries + 1):
+            try:
+                logger.info(f"Connecting to event broker at {bootstrap_servers} (Attempt {attempt}/{retries})...")
+                self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
+                await self._producer.start()
+                self._connected = True
+                logger.info("Successfully connected to event broker.")
+                return
+            except Exception as e:
+                logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
+                # FIX: Explicitly shut down the orphaned producer to prevent memory leaks/warnings
+                if self._producer:
+                    try:
+                        await self._producer.stop()
+                    except Exception:
+                        pass
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+                else:
+                    self._connected = False
+                    logger.error("Failed to connect to event broker after maximum retries.")
+                    raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
+    async def disconnect(self) -> None:
+        if self._producer and self._connected:
+            logger.info("Disconnecting from event broker...")
+            await self._producer.stop()
+            self._connected = False
+            logger.info("Successfully disconnected from event broker.")
+    def is_connected(self) -> bool:
+        return self._connected
+event_broker = EventBroker(bootstrap_servers="localhost:9092")
 </file>
 
 <file path="backend/domain/events/ingestion.py">
@@ -2590,6 +2485,150 @@ def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
     return _event_adapter.validate_python(payload)
 </file>
 
+<file path="backend/services/parsers/factory.py">
+# backend/services/parsers/factory.py
+# Routes discovered files to the correct AST or Manifest parser and publishes events.
+import logging
+import os
+from typing import Any
+from backend.core.events.broker import event_broker
+from backend.core.events.publisher import EventPublisher
+from backend.models.events import (
+    FileDiscovered,
+)
+from backend.services.parsers.manifest_parser import ManifestParser
+from backend.services.parsers.python_parser import PythonParser
+logger = logging.getLogger(__name__)
+# Initialize parsers globally to avoid reloading grammars
+_PY_PARSER = PythonParser()
+_MANIFEST_PARSER = ManifestParser()
+# Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
+_EVENT_BUS = EventPublisher(event_broker)
+async def publish_event(event: Any) -> None:
+    """
+    Serializes the Pydantic event and pushes it to the Epic 3 Event Bus.
+    """
+    # Determine the correct topic based on the event type
+    topic = "events.knowledge.extracted"
+    # Pass the raw Pydantic event object, NOT serialized bytes.
+    # EventPublisher.publish() handles the model_dump_json() serialization securely.
+    await _EVENT_BUS.publish(topic, event)
+async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
+    """
+    Reads the file from disk, parses its AST or Manifest, and emits structural events.
+    """
+    full_path = os.path.join(clone_dir, event.file_path)
+    if not os.path.exists(full_path):
+        return
+    try:
+        # Move the open() inside the try block to safely handle read errors
+        with open(full_path, "rb") as f:
+            source_code = f.read()
+        # 1. Process Package Manifests (US-4.4)
+        if event.file_path.endswith(("requirements.txt", "package.json")):
+            deps = _MANIFEST_PARSER.parse_manifest(
+                source_code, event.repository_id, event.file_path
+            )
+            for dep in deps:
+                await publish_event(dep)
+        # 2. Process Python ASTs (US-4.3 & US-4.4)
+        elif event.language in ("py", "python"):
+            entities, relationships = _PY_PARSER.parse(
+                source_code, event.repository_id, event.file_path
+            )
+            for ent in entities:
+                await publish_event(ent)
+            for rel in relationships:
+                await publish_event(rel)
+    except Exception as e:
+        # Log the error and continue processing other files
+        logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)
+</file>
+
+<file path="Dockerfile">
+# Dockerfile
+
+# This Dockerfile uses a multi-stage build to create a lightweight runtime image
+#for a Python application.
+
+FROM python:3.12-slim
+
+# Install system dependencies (git is required for repository cloning)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Copy the uv executable directly from the official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# Set uv to compile bytecode for faster startup
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy dependency manifests first to leverage Docker layer caching
+COPY pyproject.toml uv.lock* ./
+
+# Install dependencies (uv will automatically create the .venv here)
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Expose the virtual environment binaries to the system path
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy the actual application code
+COPY backend/ /app/backend/
+
+EXPOSE 8000
+
+# Let uv handle the execution and environment activation safely
+CMD ["uv", "run", "uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+</file>
+
+<file path="backend/core/telemetry.py">
+# backend/core/telemetry.py
+# This file configures OpenTelemetry for distributed tracing across the platform.
+import os
+import logging
+from typing import Any
+from fastapi import FastAPI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+logger = logging.getLogger(__name__)
+def setup_telemetry(
+    app: FastAPI | None = None, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
+) -> None:
+    try:
+        # 1. Create Resource and Provider unconditionally
+        resource = Resource(attributes={SERVICE_NAME: service_name})
+        sdk_provider = TracerProvider(resource=resource)
+        # 2. Add Exporter
+        if exporter is None:
+            endpoint = os.getenv("OTLP_ENDPOINT", "http://jaeger:4318/v1/traces")
+            otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
+            # Flush every 1000ms instead of 5000ms for rapid local observability
+            processor: Any = BatchSpanProcessor(otlp_exporter, schedule_delay_millis=1000)
+        else:
+            processor = SimpleSpanProcessor(exporter)
+        sdk_provider.add_span_processor(processor)
+        trace.set_tracer_provider(sdk_provider)
+        # 3. Instrument FastAPI explicitly if provided
+        if app is not None:
+            # FIX: Tightly isolate the teardown check so it never aborts the setup
+            try:
+                FastAPIInstrumentor().uninstrument_app(app)
+            except Exception:
+                pass
+            FastAPIInstrumentor().instrument_app(app)
+        logger.info(f"OpenTelemetry successfully initialized for {service_name}")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenTelemetry: {e}", exc_info=True)
+def instrument_db_engine(engine: Any) -> None:
+    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
+</file>
+
 <file path="backend/worker.py">
 # backend/worker.py
 # This file configures the ARQ (Async Redis Queue) worker for background processing.
@@ -2638,91 +2677,6 @@ class WorkerSettings:
     on_shutdown = shutdown
 # To run the worker:
 # `arq backend.worker.WorkerSettings`
-</file>
-
-<file path="Dockerfile">
-# Dockerfile
-
-# This Dockerfile uses a multi-stage build to create a lightweight runtime image
-#for a Python application.
-
-FROM python:3.12-slim
-
-# Install system dependencies (git is required for repository cloning)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
-# Copy the uv executable directly from the official image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-WORKDIR /app
-
-# Set uv to compile bytecode for faster startup
-ENV UV_COMPILE_BYTECODE=1
-
-# Copy dependency manifests first to leverage Docker layer caching
-COPY pyproject.toml uv.lock* ./
-
-# Install dependencies (uv will automatically create the .venv here)
-RUN uv sync --frozen --no-dev --no-install-project
-
-# Expose the virtual environment binaries to the system path
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Copy the actual application code
-COPY backend/ /app/backend/
-
-EXPOSE 8000
-
-# Let uv handle the execution and environment activation safely
-CMD ["uv", "run", "uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-</file>
-
-<file path="backend/models/events.py">
-# backend/models/events.py
-# This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
-from typing import Any
-from pydantic import Field
-from backend.domain.events.base import CodeGraphEvent
-class RepositoryIngestionRequested(CodeGraphEvent[Any]):
-    type: str = "RepositoryIngestionRequested"
-    source: str = "github_webhook"
-    repository_url: str
-    repository_id: int
-    branch: str
-    data: Any | None = None
-class FileDiscovered(CodeGraphEvent[Any]):
-    type: str = "FileDiscovered"
-    source: str = "git_service"
-    repository_id: int
-    file_path: str
-    language: str
-    data: Any | None = None
-class EntityExtracted(CodeGraphEvent[Any]):
-    type: str = "EntityExtracted"
-    source: str = "ast_parser"
-    repository_id: int
-    file_path: str
-    entity_type: str = Field(..., description="Class, Function, Interface, etc.")
-    name: str
-    docstring: str | None = None
-    data: Any = None
-class RelationshipExtracted(CodeGraphEvent[Any]):
-    type: str = "RelationshipExtracted"
-    source: str = "ast_parser"
-    repository_id: int
-    source_file: str
-    target_module: str
-    relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
-    data: Any = None
-class DependencyDetected(CodeGraphEvent[Any]):
-    type: str = "DependencyDetected"
-    source: str = "manifest_parser"
-    repository_id: int
-    file_path: str
-    package_manager: str
-    package_name: str
-    version_constraint: str | None = None
-    data: Any = None
 </file>
 
 <file path=".gitignore">
@@ -3010,6 +2964,54 @@ clean:
 
 clean-ps:
 	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
+</file>
+
+<file path="backend/models/events.py">
+# backend/models/events.py
+# This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
+from typing import Any
+from pydantic import Field
+from backend.domain.events.base import CodeGraphEvent
+class RepositoryIngestionRequested(CodeGraphEvent[Any]):
+    type: str = "RepositoryIngestionRequested"
+    source: str = "github_webhook"
+    repository_url: str
+    repository_id: int
+    branch: str
+    data: Any | None = None
+class FileDiscovered(CodeGraphEvent[Any]):
+    type: str = "FileDiscovered"
+    source: str = "git_service"
+    repository_id: int
+    file_path: str
+    language: str
+    data: Any | None = None
+class EntityExtracted(CodeGraphEvent[Any]):
+    type: str = "EntityExtracted"
+    source: str = "ast_parser"
+    repository_id: int
+    file_path: str
+    entity_type: str = Field(..., description="Class, Function, Interface, etc.")
+    name: str
+    docstring: str | None = None
+    data: Any = None
+class RelationshipExtracted(CodeGraphEvent[Any]):
+    type: str = "RelationshipExtracted"
+    source: str = "ast_parser"
+    repository_id: int
+    source_file: str
+    target_module: str
+    relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
+    data: Any = None
+class DependencyDetected(CodeGraphEvent[Any]):
+    type: str = "DependencyDetected"
+    source: str = "manifest_parser"
+    repository_id: int
+    file_path: str
+    package_manager: str
+    package_name: str
+    version_constraint: str | None = None
+    data: Any = None
 </file>
 
 <file path="backend/main.py">

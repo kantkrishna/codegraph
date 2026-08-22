@@ -38,7 +38,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # Initialize OpenTelemetry for the worker process
     setup_telemetry(app=None, service_name="codegraph-worker")
     # Initialize the Kafka producer for the worker process
-    await event_broker.connect()
+    await event_broker.connect(retries=10, delay=5.0)
 
 
 # Ensure clean disconnection on worker termination

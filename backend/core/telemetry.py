@@ -38,7 +38,7 @@ def setup_telemetry(
         
         # 3. Instrument FastAPI explicitly if provided
         if app is not None:
-            FastAPIInstrumentor().instrument_app(app)
+            FastAPIInstrumentor().instrument_app(app, tracer_provider=sdk_provider)
             
         logger.info(f"OpenTelemetry successfully initialized for {service_name}")
     except Exception as e:
