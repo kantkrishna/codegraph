@@ -2,56 +2,54 @@
 #
 # This file manages the async connection to the Apache Kafka broker.
 
+import asyncio
 import logging
 import os
-
 from aiokafka import AIOKafkaProducer
-
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-
 class BrokerConnectionError(Exception):
-    """Raised when the broker fails to connect."""
-
     pass
 
-
 class EventBroker:
-    """
-    Manages the lifecycle and connection state of the event broker (Kafka).
-    To be injected into FastAPI lifespan events and Health check routers.
-    """
-
     def __init__(self, bootstrap_servers: str) -> None:
         self.bootstrap_servers = bootstrap_servers
         self._producer: AIOKafkaProducer | None = None
         self._connected: bool = False
 
-    async def connect(self) -> None:
-        """Initialize the Kafka producer and connect to the broker."""
-        try:
-            # 1. Force resolution from the OS environment to ensure Docker networking works
-            bootstrap_servers = (
-                os.getenv("KAFKA_BOOTSTRAP_SERVERS")
-                or os.getenv("KAFKA_URL")
-                or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-            )
-
-            print(f"Connecting to event broker at {bootstrap_servers}...")
-
-            self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
-            await self._producer.start()
-            self._connected = True
-            logger.info("Successfully connected to event broker.")
-        except Exception as e:
-            self._connected = False
-            logger.error(f"Failed to connect to event broker: {str(e)}")
-            raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
+    async def connect(self, retries: int = 5, delay: float = 3.0) -> None:
+        bootstrap_servers = (
+            os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+            or os.getenv("KAFKA_URL")
+            or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        )
+        for attempt in range(1, retries + 1):
+            try:
+                logger.info(f"Connecting to event broker at {bootstrap_servers} (Attempt {attempt}/{retries})...")
+                self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
+                await self._producer.start()
+                self._connected = True
+                logger.info("Successfully connected to event broker.")
+                return
+            except Exception as e:
+                logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
+                # FIX: Explicitly shut down the orphaned producer to prevent memory leaks/warnings
+                if self._producer:
+                    try:
+                        await self._producer.stop()
+                    except Exception:
+                        pass
+                
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+                else:
+                    self._connected = False
+                    logger.error("Failed to connect to event broker after maximum retries.")
+                    raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
 
     async def disconnect(self) -> None:
-        """Gracefully shutdown the Kafka producer."""
         if self._producer and self._connected:
             logger.info("Disconnecting from event broker...")
             await self._producer.stop()
@@ -59,9 +57,6 @@ class EventBroker:
             logger.info("Successfully disconnected from event broker.")
 
     def is_connected(self) -> bool:
-        """Return the current connection state for health checks."""
         return self._connected
 
-
-# Global singleton to be attached to FastAPI lifespan
 event_broker = EventBroker(bootstrap_servers="localhost:9092")

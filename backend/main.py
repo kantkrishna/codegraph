@@ -42,12 +42,12 @@ app = FastAPI(
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(LoggingMiddleware)
 
-# Initialize OpenTelemetry for Distributed Tracing
-setup_telemetry(app)
-
 # Register Routers
 app.include_router(system.router)
 app.include_router(webhooks.router)
 
 # Register the database-checking health router
 app.include_router(health.router)
+
+# Initialize OpenTelemetry for Distributed Tracing
+setup_telemetry(app)

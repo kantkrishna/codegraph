@@ -150,28 +150,6 @@ repomix.config.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="scripts/simulate_webhook.py">
-import hashlib
-import hmac
-import json
-import httpx
-SECRET = "super-secret-hmac-key"
-URL = "http://localhost:8000/api/v1/webhooks/github"
-payload = {
-    "ref": "main",
-    "repository": {"id": 999888, "clone_url": "https://github.com/pallets/click.git"},
-}
-payload_bytes = json.dumps(payload).encode("utf-8")
-signature = "sha256=" + hmac.new(SECRET.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
-headers = {
-    "X-Hub-Signature-256": signature,
-    "X-GitHub-Event": "push",
-    "Content-Type": "application/json",
-}
-response = httpx.post(URL, content=payload_bytes, headers=headers, timeout=15.0)
-print(f"Response: {response.status_code} - {response.text}")
-</file>
-
 <file path=".github/workflows/ci.yml">
 # .github/workflows/ci.yml
 # This file defines the CI pipeline for CodeGraph repository.
@@ -385,57 +363,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         status_code=500,
         content={"error": "Internal Server Error", "detail": str(exc)},
     )
-</file>
-
-<file path="backend/core/events/broker.py">
-# backend/core/events/broker.py
-#
-# This file manages the async connection to the Apache Kafka broker.
-import logging
-import os
-from aiokafka import AIOKafkaProducer
-from backend.core.config import settings
-logger = logging.getLogger(__name__)
-class BrokerConnectionError(Exception):
-    """Raised when the broker fails to connect."""
-    pass
-class EventBroker:
-    """
-    Manages the lifecycle and connection state of the event broker (Kafka).
-    To be injected into FastAPI lifespan events and Health check routers.
-    """
-    def __init__(self, bootstrap_servers: str) -> None:
-        self.bootstrap_servers = bootstrap_servers
-        self._producer: AIOKafkaProducer | None = None
-        self._connected: bool = False
-    async def connect(self) -> None:
-        """Initialize the Kafka producer and connect to the broker."""
-        try:
-            # 1. Force resolution from the OS environment to ensure Docker networking works
-            bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS") or os.getenv("KAFKA_URL") or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-            print(f"Connecting to event broker at {bootstrap_servers}...")
-            self._producer = AIOKafkaProducer(
-                bootstrap_servers=bootstrap_servers
-            )
-            await self._producer.start()
-            self._connected = True
-            logger.info("Successfully connected to event broker.")
-        except Exception as e:
-            self._connected = False
-            logger.error(f"Failed to connect to event broker: {str(e)}")
-            raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
-    async def disconnect(self) -> None:
-        """Gracefully shutdown the Kafka producer."""
-        if self._producer and self._connected:
-            logger.info("Disconnecting from event broker...")
-            await self._producer.stop()
-            self._connected = False
-            logger.info("Successfully disconnected from event broker.")
-    def is_connected(self) -> bool:
-        """Return the current connection state for health checks."""
-        return self._connected
-# Global singleton to be attached to FastAPI lifespan
-event_broker = EventBroker(bootstrap_servers="localhost:9092")
 </file>
 
 <file path="backend/core/events/consumer.py">
@@ -832,161 +759,6 @@ class BaseASTParser(ABC):
     ) -> tuple[list[EntityExtracted], list[RelationshipExtracted]]:
         """Parses source code and returns structural entities and relationships."""
         pass
-</file>
-
-<file path="backend/services/parsers/factory.py">
-# backend/services/parsers/factory.py
-# Routes discovered files to the correct AST or Manifest parser and publishes events.
-import os
-from typing import Any
-from backend.core.config import settings
-from backend.core.events.broker import EventBroker
-from backend.core.events.publisher import EventPublisher
-from backend.models.events import (
-    FileDiscovered,
-)
-from backend.services.parsers.manifest_parser import ManifestParser
-from backend.services.parsers.python_parser import PythonParser
-# Initialize parsers globally to avoid reloading grammars
-_PY_PARSER = PythonParser()
-_MANIFEST_PARSER = ManifestParser()
-# Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
-_broker = EventBroker(settings.REDIS_URL)
-_EVENT_BUS = EventPublisher(_broker)
-async def publish_event(event: Any) -> None:
-    """
-    Serializes the Pydantic event and pushes it to the Epic 3 Event Bus.
-    """
-    # Determine the correct topic based on the event type
-    topic = "events.knowledge.extracted"
-    # Serialize the Pydantic model to JSON bytes
-    payload = event.model_dump_json().encode("utf-8")
-    # Publish to the durable Event Bus
-    await _EVENT_BUS.publish(topic, payload)
-async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
-    """
-    Reads the file from disk, parses its AST or Manifest, and emits structural events.
-    """
-    full_path = os.path.join(clone_dir, event.file_path)
-    if not os.path.exists(full_path):
-        return
-    try:
-        # Move the open() inside the try block to safely handle read errors
-        with open(full_path, "rb") as f:
-            source_code = f.read()
-        # 1. Process Package Manifests (US-4.4)
-        if event.file_path.endswith(("requirements.txt", "package.json")):
-            deps = _MANIFEST_PARSER.parse_manifest(
-                source_code, event.repository_id, event.file_path
-            )
-            for dep in deps:
-                await publish_event(dep)
-        # 2. Process Python ASTs (US-4.3 & US-4.4)
-        elif event.language in ("py", "python"):
-            entities, relationships = _PY_PARSER.parse(
-                source_code, event.repository_id, event.file_path
-            )
-            for ent in entities:
-                await publish_event(ent)
-            for rel in relationships:
-                await publish_event(rel)
-    except Exception:
-        # Resilient processing: Ignore malformed files or read errors, proceed to the next
-        pass
-</file>
-
-<file path="backend/services/parsers/python_parser.py">
-# backend/services/parsers/python_parser.py
-# Implements resilient Tree-sitter AST extraction for Python files using DFS traversal.
-from typing import Any
-import tree_sitter_python as tspy
-from tree_sitter import Language, Parser
-from backend.models.events import EntityExtracted, RelationshipExtracted
-from backend.services.parsers.base import BaseASTParser
-class PythonParser(BaseASTParser):
-    def __init__(self) -> None:
-        self.language = Language(tspy.language())
-        self.parser = Parser(self.language)
-    def parse(
-        self, source_code: bytes, repo_id: int, file_path: str
-    ) -> tuple[list[EntityExtracted], list[RelationshipExtracted]]:
-        tree = self.parser.parse(source_code)
-        entities: list[EntityExtracted] = []
-        relationships: list[RelationshipExtracted] = []
-        def traverse(node: Any) -> None:
-            # 1. Extract Classes
-            if node.type == "class_definition":
-                for child in node.children:
-                    if child.type == "identifier":
-                        # Bulletproof byte-slicing (Immune to node.text API changes)
-                        text = source_code[child.start_byte : child.end_byte].decode(
-                            "utf-8", errors="ignore"
-                        )
-                        entities.append(
-                            EntityExtracted(
-                                repository_id=repo_id,
-                                file_path=file_path,
-                                entity_type="Class",
-                                name=text,
-                            )
-                        )
-                        break
-            # 2. Extract Functions
-            elif node.type == "function_definition":
-                for child in node.children:
-                    if child.type == "identifier":
-                        text = source_code[child.start_byte : child.end_byte].decode(
-                            "utf-8", errors="ignore"
-                        )
-                        entities.append(
-                            EntityExtracted(
-                                repository_id=repo_id,
-                                file_path=file_path,
-                                entity_type="Function",
-                                name=text,
-                            )
-                        )
-                        break
-            # 3. Extract Standard Imports
-            elif node.type == "import_statement":
-                def extract_dotted(n: Any) -> None:
-                    if n.type == "dotted_name":
-                        text = source_code[n.start_byte : n.end_byte].decode(
-                            "utf-8", errors="ignore"
-                        )
-                        relationships.append(
-                            RelationshipExtracted(
-                                repository_id=repo_id,
-                                source_file=file_path,
-                                target_module=text,
-                                relationship_type="IMPORTS",
-                            )
-                        )
-                    else:
-                        for c in n.children:
-                            extract_dotted(c)
-                extract_dotted(node)
-            # 4. Extract From Imports
-            elif node.type == "import_from_statement":
-                for child in node.children:
-                    if child.type == "dotted_name":
-                        text = source_code[child.start_byte : child.end_byte].decode(
-                            "utf-8", errors="ignore"
-                        )
-                        relationships.append(
-                            RelationshipExtracted(
-                                repository_id=repo_id,
-                                source_file=file_path,
-                                target_module=text,
-                                relationship_type="IMPORTS",
-                            )
-                        )
-                        break
-            # Continue deep search
-            for child in node.children:
-                traverse(child)
-        traverse(tree.root_node)
-        return entities, relationships
 </file>
 
 <file path="backend/services/__init__.py">
@@ -1892,6 +1664,28 @@ if __name__ == "__main__":
     apply_constraints()
 </file>
 
+<file path="scripts/simulate_webhook.py">
+import hashlib
+import hmac
+import json
+import httpx
+SECRET = "super-secret-hmac-key"
+URL = "http://localhost:8000/api/v1/webhooks/github"
+payload = {
+    "ref": "main",
+    "repository": {"id": 999888, "clone_url": "https://github.com/pallets/click.git"},
+}
+payload_bytes = json.dumps(payload).encode("utf-8")
+signature = "sha256=" + hmac.new(SECRET.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+headers = {
+    "X-Hub-Signature-256": signature,
+    "X-GitHub-Event": "push",
+    "Content-Type": "application/json",
+}
+response = httpx.post(URL, content=payload_bytes, headers=headers, timeout=15.0)
+print(f"Response: {response.status_code} - {response.text}")
+</file>
+
 <file path="scripts/validate_neo4j_schema.py">
 # scripts/validate_neo4j_schema.py
 # This script validates both the V1 architecture schema and the V2 code/doc schema
@@ -2207,6 +2001,62 @@ def create_app() -> FastAPI:
 app = create_app()
 </file>
 
+<file path="backend/core/events/broker.py">
+# backend/core/events/broker.py
+#
+# This file manages the async connection to the Apache Kafka broker.
+import asyncio
+import logging
+import os
+from aiokafka import AIOKafkaProducer
+from backend.core.config import settings
+logger = logging.getLogger(__name__)
+class BrokerConnectionError(Exception):
+    """Raised when the broker fails to connect."""
+    pass
+class EventBroker:
+    """
+    Manages the lifecycle and connection state of the event broker (Kafka).
+    To be injected into FastAPI lifespan events and Health check routers.
+    """
+    def __init__(self, bootstrap_servers: str) -> None:
+        self.bootstrap_servers = bootstrap_servers
+        self._producer: AIOKafkaProducer | None = None
+        self._connected: bool = False
+    async def connect(self, retries: int = 5, delay: float = 3.0) -> None:
+        """Initialize the Kafka producer and connect to the broker with retries."""
+        bootstrap_servers = (
+            os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+            or os.getenv("KAFKA_URL")
+            or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+        )
+        for attempt in range(1, retries + 1):
+            try:
+                logger.info(f"Connecting to event broker at {bootstrap_servers} (Attempt {attempt}/{retries})...")
+                self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
+                await self._producer.start()
+                self._connected = True
+                logger.info("Successfully connected to event broker.")
+                return
+            except Exception as e:
+                logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+                else:
+                    self._connected = False
+                    logger.error("Failed to connect to event broker after maximum retries.")
+                    raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
+    async def disconnect(self) -> None:
+        if self._producer and self._connected:
+            logger.info("Disconnecting from event broker...")
+            await self._producer.stop()
+            self._connected = False
+            logger.info("Successfully disconnected from event broker.")
+    def is_connected(self) -> bool:
+        return self._connected
+event_broker = EventBroker(bootstrap_servers="localhost:9092")
+</file>
+
 <file path="backend/core/config.py">
 # backend/core/config.py
 # This file defines the Pydantic settings for the application, which are loaded from
@@ -2226,74 +2076,8 @@ class Settings(BaseSettings):
     GITHUB_WEBHOOK_SECRET: SecretStr = SecretStr("")
     # Redis Worker
     REDIS_URL: str = "redis://localhost:6379"
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 settings = Settings()
-</file>
-
-<file path="backend/core/telemetry.py">
-# backend/core/telemetry.py
-# This file configures OpenTelemetry for distributed tracing across the platform.
-import os
-from typing import Any
-from fastapi import FastAPI
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
-from opentelemetry.util._once import Once
-def setup_telemetry(
-    app: FastAPI, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
-) -> None:
-    """Initializes OpenTelemetry tracing and instruments the FastAPI app (AC 1 & 2)."""
-    # --- THE RESTORED IDEMPOTENCY BLOCK ---
-    current_provider = trace.get_tracer_provider()
-    if hasattr(current_provider, "add_span_processor"):
-        if exporter is not None:
-            current_provider.add_span_processor(SimpleSpanProcessor(exporter))
-        try:
-            FastAPIInstrumentor().instrument_app(app)
-        except Exception:
-            pass
-        return
-    # --------------------------------------
-    # 1. Create a new TracerProvider for the service
-    resource = Resource(attributes={SERVICE_NAME: service_name})
-    sdk_provider = TracerProvider(resource=resource)
-    if exporter is None:
-        # Production/Local Docker route: OTLP exporter pushing to Jaeger
-        endpoint = os.getenv("OTLP_ENDPOINT", "http://localhost:4317")
-        otlp_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
-        processor: Any = BatchSpanProcessor(otlp_exporter)
-    else:
-        # Testing route: pushes spans to memory sequentially
-        processor = SimpleSpanProcessor(exporter)
-    sdk_provider.add_span_processor(processor)
-    # 2. Reset OTEL lock to allow overriding the provider during Pytest runs
-    if hasattr(trace, "_TRACER_PROVIDER_SET_ONCE"):
-        trace._TRACER_PROVIDER_SET_ONCE = Once()
-    # 3. Safely set global provider so ProxyTracers correctly route to it
-    trace.set_tracer_provider(sdk_provider)
-    # 4. Instrument the app securely
-    try:
-        # Uninstrument first to prevent Duplicate Instrumentation warnings in Pytest
-        FastAPIInstrumentor().uninstrument_app(app)
-    except Exception:
-        pass
-    try:
-        # Re-instrument with the newly attached provider
-        FastAPIInstrumentor().instrument_app(app)
-    except Exception:
-        pass
-def instrument_db_engine(engine: Any) -> None:
-    """AC 3: Helper to instrument SQLAlchemy engines once initialized."""
-    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
 </file>
 
 <file path="backend/domain/events/base.py">
@@ -2365,6 +2149,66 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 </file>
 
+<file path="backend/services/parsers/factory.py">
+# backend/services/parsers/factory.py
+# Routes discovered files to the correct AST or Manifest parser and publishes events.
+import logging
+import os
+from typing import Any
+from backend.core.events.broker import event_broker
+from backend.core.events.publisher import EventPublisher
+from backend.models.events import (
+    FileDiscovered,
+)
+from backend.services.parsers.manifest_parser import ManifestParser
+from backend.services.parsers.python_parser import PythonParser
+logger = logging.getLogger(__name__)
+# Initialize parsers globally to avoid reloading grammars
+_PY_PARSER = PythonParser()
+_MANIFEST_PARSER = ManifestParser()
+# Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
+_EVENT_BUS = EventPublisher(event_broker)
+async def publish_event(event: Any) -> None:
+    """
+    Serializes the Pydantic event and pushes it to the Epic 3 Event Bus.
+    """
+    # Determine the correct topic based on the event type
+    topic = "events.knowledge.extracted"
+    # Pass the raw Pydantic event object, NOT serialized bytes.
+    # EventPublisher.publish() handles the model_dump_json() serialization securely.
+    await _EVENT_BUS.publish(topic, event)
+async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
+    """
+    Reads the file from disk, parses its AST or Manifest, and emits structural events.
+    """
+    full_path = os.path.join(clone_dir, event.file_path)
+    if not os.path.exists(full_path):
+        return
+    try:
+        # Move the open() inside the try block to safely handle read errors
+        with open(full_path, "rb") as f:
+            source_code = f.read()
+        # 1. Process Package Manifests (US-4.4)
+        if event.file_path.endswith(("requirements.txt", "package.json")):
+            deps = _MANIFEST_PARSER.parse_manifest(
+                source_code, event.repository_id, event.file_path
+            )
+            for dep in deps:
+                await publish_event(dep)
+        # 2. Process Python ASTs (US-4.3 & US-4.4)
+        elif event.language in ("py", "python"):
+            entities, relationships = _PY_PARSER.parse(
+                source_code, event.repository_id, event.file_path
+            )
+            for ent in entities:
+                await publish_event(ent)
+            for rel in relationships:
+                await publish_event(rel)
+    except Exception as e:
+        # Log the error and continue processing other files
+        logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)
+</file>
+
 <file path="backend/services/parsers/manifest_parser.py">
 # backend/services/parsers/manifest_parser.py
 # Parses application manifests (requirements.txt, package.json) for dependencies.
@@ -2416,6 +2260,100 @@ class ManifestParser:
         return dependencies
 </file>
 
+<file path="backend/services/parsers/python_parser.py">
+# backend/services/parsers/python_parser.py
+# Implements resilient Tree-sitter AST extraction for Python files using DFS traversal.
+from typing import Any
+import tree_sitter_python as tspy
+from tree_sitter import Language, Parser
+from backend.models.events import EntityExtracted, RelationshipExtracted
+from backend.services.parsers.base import BaseASTParser
+class PythonParser(BaseASTParser):
+    def __init__(self) -> None:
+        self.language = Language(tspy.language())
+        self.parser = Parser(self.language)
+    def parse(
+        self, source_code: bytes, repo_id: int, file_path: str
+    ) -> tuple[list[EntityExtracted], list[RelationshipExtracted]]:
+        tree = self.parser.parse(source_code)
+        entities: list[EntityExtracted] = []
+        relationships: list[RelationshipExtracted] = []
+        def traverse(node: Any) -> None:
+            # 1. Extract Classes
+            if node.type == "class_definition":
+                for child in node.children:
+                    if child.type == "identifier":
+                        # Bulletproof byte-slicing (Immune to node.text API changes)
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
+                        entities.append(
+                            EntityExtracted(
+                                repository_id=repo_id,
+                                file_path=file_path,
+                                entity_type="Class",
+                                name=text,
+                            )
+                        )
+                        break
+            # 2. Extract Functions
+            elif node.type == "function_definition":
+                for child in node.children:
+                    if child.type == "identifier":
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
+                        entities.append(
+                            EntityExtracted(
+                                repository_id=repo_id,
+                                file_path=file_path,
+                                entity_type="Function",
+                                name=text,
+                            )
+                        )
+                        break
+            # 3. Extract Standard Imports
+            elif node.type == "import_statement":
+                def extract_dotted(n: Any) -> None:
+                    if n.type == "dotted_name":
+                        text = source_code[n.start_byte : n.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
+                        relationships.append(
+                            RelationshipExtracted(
+                                repository_id=repo_id,
+                                source_file=file_path,
+                                target_module=text,
+                                relationship_type="IMPORTS",
+                            )
+                        )
+                    else:
+                        for c in n.children:
+                            extract_dotted(c)
+                extract_dotted(node)
+            # 4. Extract From Imports
+            elif node.type == "import_from_statement":
+                for child in node.children:
+                    if child.type == "dotted_name":
+                        text = source_code[child.start_byte : child.end_byte].decode(
+                            "utf-8", errors="ignore"
+                        )
+                        relationships.append(
+                            RelationshipExtracted(
+                                repository_id=repo_id,
+                                source_file=file_path,
+                                target_module=text,
+                                relationship_type="IMPORTS",
+                            )
+                        )
+                        break
+            # Continue deep search
+            for child in node.children:
+                traverse(child)
+        traverse(tree.root_node)
+        return entities, relationships
+</file>
+
 <file path="backend/services/git_service.py">
 # backend/services/git_service.py
 # This file handles executing shallow git clones and triggering file discovery.
@@ -2453,85 +2391,12 @@ async def clone_and_process_repository(clone_url: str, repo_id: int, branch: str
         logger.info(f"Completed ingestion traversal for {repo_id}. Ephemeral disk cleaning up.")
 </file>
 
-<file path="backend/worker.py">
-# backend/worker.py
-# This file configures the ARQ (Async Redis Queue) worker for background processing.
-from typing import Any
-from arq.connections import RedisSettings
-from backend.core.config import settings
-from backend.core.events.broker import event_broker
-from backend.core.logger import setup_logging
-from backend.services.git_service import clone_and_process_repository
-async def clone_repository_task(
-    ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
-) -> None:
-    """ARQ Task wrapper for repository cloning."""
-    await clone_and_process_repository(clone_url, repo_id, branch)
-# Define the startup hook
-async def startup(ctx: dict[str, Any]) -> None:
-    setup_logging()
-    # Initialize the Kafka producer for the worker process
-    await event_broker.connect()
-# Ensure clean disconnection on worker termination
-async def shutdown(ctx: dict[str, Any]) -> None:
-    await event_broker.disconnect()
-class WorkerSettings:
-    """Configuration for the ARQ worker process."""
-    functions = [clone_repository_task]
-    # redis_settings = settings.REDIS_URL
-    # Parse the URL string into an arq RedisSettings object
-    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 10
-    job_timeout = 600  # 10 minutes max for cloning massive repos
-    on_startup = startup
-    on_shutdown = shutdown
-# To run the worker:
-# `arq backend.worker.WorkerSettings`
-</file>
-
 <file path=".dockerignore">
 .venv
 __pycache__
 .git
 *.pyc
 .env
-</file>
-
-<file path="Dockerfile">
-# Dockerfile
-
-# This Dockerfile uses a multi-stage build to create a lightweight runtime image
-#for a Python application.
-
-FROM python:3.12-slim
-
-# Install system dependencies (git is required for repository cloning)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
-# Copy the uv executable directly from the official image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-WORKDIR /app
-
-# Set uv to compile bytecode for faster startup
-ENV UV_COMPILE_BYTECODE=1
-
-# Copy dependency manifests first to leverage Docker layer caching
-COPY pyproject.toml uv.lock* ./
-
-# Install dependencies (uv will automatically create the .venv here)
-RUN uv sync --frozen --no-dev --no-install-project
-
-# Expose the virtual environment binaries to the system path
-ENV PATH="/app/.venv/bin:$PATH"
-
-# Copy the actual application code
-COPY backend/ /app/backend/
-
-EXPOSE 8000
-
-# Let uv handle the execution and environment activation safely
-CMD ["uv", "run", "uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 </file>
 
 <file path="README.md">
@@ -2593,6 +2458,51 @@ This project uses `uv` for dependency management.
     "encoding": "o200k_base"
   }
 }
+</file>
+
+<file path="backend/core/telemetry.py">
+# backend/core/telemetry.py
+# This file configures OpenTelemetry for distributed tracing across the platform.
+# backend/core/telemetry.py
+import os
+import logging
+from typing import Any
+from fastapi import FastAPI
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+logger = logging.getLogger(__name__)
+def setup_telemetry(
+    app: FastAPI | None = None, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
+) -> None:
+    try:
+        # 1. Create Resource and Provider unconditionally
+        resource = Resource(attributes={SERVICE_NAME: service_name})
+        sdk_provider = TracerProvider(resource=resource)
+        # 2. Add Exporter
+        if exporter is None:
+            endpoint = os.getenv("OTLP_ENDPOINT", "http://jaeger:4318/v1/traces")
+            otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
+            # Flush every 1000ms instead of 5000ms for rapid local observability
+            processor: Any = BatchSpanProcessor(otlp_exporter, schedule_delay_millis=1000)
+        else:
+            processor = SimpleSpanProcessor(exporter)
+        sdk_provider.add_span_processor(processor)
+        # 3. Force override global provider
+        trace.set_tracer_provider(sdk_provider)
+        # 4. Instrument FastAPI explicitly if provided
+        if app is not None:
+            FastAPIInstrumentor().uninstrument_app(app)
+            FastAPIInstrumentor().instrument_app(app, tracer_provider=sdk_provider)
+        logger.info(f"OpenTelemetry successfully initialized for {service_name}")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenTelemetry: {e}", exc_info=True)
+def instrument_db_engine(engine: Any) -> None:
+    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
 </file>
 
 <file path="backend/domain/events/ingestion.py">
@@ -2680,139 +2590,139 @@ def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
     return _event_adapter.validate_python(payload)
 </file>
 
+<file path="backend/worker.py">
+# backend/worker.py
+# This file configures the ARQ (Async Redis Queue) worker for background processing.
+from typing import Any
+from arq.connections import RedisSettings
+from opentelemetry import trace
+from backend.core.config import settings
+from backend.core.events.broker import event_broker
+from backend.core.logger import setup_logging
+from backend.core.telemetry import setup_telemetry
+from backend.services.git_service import clone_and_process_repository
+tracer = trace.get_tracer(__name__)
+async def clone_repository_task(
+    ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
+) -> None:
+    """ARQ Task wrapper for repository cloning."""
+    # Get tracer inside the task to avoid disconnected ProxyTracers
+    tracer = trace.get_tracer(__name__)
+    # Create a manual root span so Jaeger can track the ingestion pipeline
+    with tracer.start_as_current_span("clone_repository_task") as span:
+        span.set_attribute("repository.url", clone_url)
+        await clone_and_process_repository(clone_url, repo_id, branch)
+    # Force flush to Jaeger before the async task yields context
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, "force_flush"):
+        provider.force_flush()
+# Define the startup hook
+async def startup(ctx: dict[str, Any]) -> None:
+    setup_logging()
+    # Initialize OpenTelemetry for the worker process
+    setup_telemetry(app=None, service_name="codegraph-worker")
+    # Initialize the Kafka producer for the worker process
+    await event_broker.connect()
+# Ensure clean disconnection on worker termination
+async def shutdown(ctx: dict[str, Any]) -> None:
+    await event_broker.disconnect()
+class WorkerSettings:
+    """Configuration for the ARQ worker process."""
+    functions = [clone_repository_task]
+    # redis_settings = settings.REDIS_URL
+    # Parse the URL string into an arq RedisSettings object
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    max_jobs = 10
+    job_timeout = 600  # 10 minutes max for cloning massive repos
+    on_startup = startup
+    on_shutdown = shutdown
+# To run the worker:
+# `arq backend.worker.WorkerSettings`
+</file>
+
+<file path="Dockerfile">
+# Dockerfile
+
+# This Dockerfile uses a multi-stage build to create a lightweight runtime image
+#for a Python application.
+
+FROM python:3.12-slim
+
+# Install system dependencies (git is required for repository cloning)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Copy the uv executable directly from the official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# Set uv to compile bytecode for faster startup
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy dependency manifests first to leverage Docker layer caching
+COPY pyproject.toml uv.lock* ./
+
+# Install dependencies (uv will automatically create the .venv here)
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Expose the virtual environment binaries to the system path
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy the actual application code
+COPY backend/ /app/backend/
+
+EXPOSE 8000
+
+# Let uv handle the execution and environment activation safely
+CMD ["uv", "run", "uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+</file>
+
 <file path="backend/models/events.py">
 # backend/models/events.py
-#
 # This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
-from pydantic import BaseModel, Field
-class RepositoryIngestionRequested(BaseModel):
+from typing import Any
+from pydantic import Field
+from backend.domain.events.base import CodeGraphEvent
+class RepositoryIngestionRequested(CodeGraphEvent[Any]):
+    type: str = "RepositoryIngestionRequested"
+    source: str = "github_webhook"
     repository_url: str
     repository_id: int
     branch: str
-class FileDiscovered(BaseModel):
+    data: Any | None = None
+class FileDiscovered(CodeGraphEvent[Any]):
+    type: str = "FileDiscovered"
+    source: str = "git_service"
     repository_id: int
     file_path: str
     language: str
-class EntityExtracted(BaseModel):
+    data: Any | None = None
+class EntityExtracted(CodeGraphEvent[Any]):
+    type: str = "EntityExtracted"
+    source: str = "ast_parser"
     repository_id: int
     file_path: str
     entity_type: str = Field(..., description="Class, Function, Interface, etc.")
     name: str
     docstring: str | None = None
-class RelationshipExtracted(BaseModel):
+    data: Any = None
+class RelationshipExtracted(CodeGraphEvent[Any]):
+    type: str = "RelationshipExtracted"
+    source: str = "ast_parser"
     repository_id: int
     source_file: str
     target_module: str
     relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
-class DependencyDetected(BaseModel):
+    data: Any = None
+class DependencyDetected(CodeGraphEvent[Any]):
+    type: str = "DependencyDetected"
+    source: str = "manifest_parser"
     repository_id: int
     file_path: str
     package_manager: str
     package_name: str
     version_constraint: str | None = None
-</file>
-
-<file path="Makefile">
-.PHONY: help install test test-unit typecheck lint lint-fix format docker-up docker-down clean
-
-# Default target
-help:
-	@echo "CodeGraph AI - Development Automation"
-	@echo ""
-	@echo "Usage:"
-	@echo "  make install        Install project dependencies using uv"
-	@echo "  make test           Run the full test suite"
-	@echo "  make test-unit      Run unit tests (e.g., docker-compose verification)"
-	@echo "  make typecheck      Run Mypy static type checking"
-	@echo "  make lint           Run Ruff code linting checks"
-	@echo "  make lint-fix       Run Ruff and auto-fix safe lint violations"
-	@echo "  make format         Format code using Black and Ruff"
-	@echo "  make docker-up      Start local services via Docker Compose"
-	@echo "  make docker-down    Stop local Docker services"
-	@echo "  make clean          Clean up build artifacts and cache files"
-
-install:
-	uv sync --all-extras
-
-test:
-	uv run pytest
-
-test-unit:
-	uv run pytest tests/unit/test_docker_compose.py
-
-lint:
-# Linting with auto-fix enabled
-	uv run ruff check --fix .
-# Code Formatting
-	uv run ruff format .
-# Typechecking
-	uv run mypy .
-
-ruff-check-tb:
-# Linting with auto-fix enabled (Ruff stack traces)
-	uv run ruff check --fix --show-files .
-
-mypy-tb:
-# Typechecking (Mypy internal stack traces)
-	uv run mypy . --tb
-
-docker-up:
-	docker-compose up -d --build
-
-docker-down:
-	docker compose down
-
-clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type d -name ".pytest_cache" -exec rm -rf {} +
-	find . -type d -name ".mypy_cache" -exec rm -rf {} +
-	find . -type d -name ".ruff_cache" -exec rm -rf {} +
-
-clean-ps:
-	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
-</file>
-
-<file path="backend/main.py">
-# backend/main.py
-# This file defines the main FastAPI application instance.
-import contextlib
-from collections.abc import AsyncIterator
-from arq import create_pool
-from arq.connections import RedisSettings
-from fastapi import FastAPI
-from backend.api.middleware.logging_middleware import LoggingMiddleware
-from backend.api.middleware.metrics_middleware import MetricsMiddleware
-# Import the health router
-from backend.api.routers import health, system, webhooks
-from backend.core.config import settings
-from backend.core.logger import setup_logging
-from backend.core.telemetry import setup_telemetry
-# Initialize structured logging before app startup
-setup_logging()
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup: Initialize ARQ Redis pool and attach to app state
-    app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
-    yield
-    # Shutdown: Close Redis connection
-    if hasattr(app.state, "redis"):
-        await app.state.redis.close()
-app = FastAPI(
-    title="CodeGraph Enterprise Platform",
-    description="Enterprise Developer Intelligence Platform API",
-    version="0.1.0",
-    lifespan=lifespan,
-)
-# Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
-app.add_middleware(MetricsMiddleware)
-app.add_middleware(LoggingMiddleware)
-# Initialize OpenTelemetry for Distributed Tracing
-setup_telemetry(app)
-# Register Routers
-app.include_router(system.router)
-app.include_router(webhooks.router)
-# Register the database-checking health router
-app.include_router(health.router)
+    data: Any = None
 </file>
 
 <file path=".gitignore">
@@ -3040,6 +2950,109 @@ __marimo__/
 docker/
 
 .continue
+</file>
+
+<file path="Makefile">
+.PHONY: help install test test-unit typecheck lint lint-fix format docker-up docker-down clean
+
+# Default target
+help:
+	@echo "CodeGraph AI - Development Automation"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make install        Install project dependencies using uv"
+	@echo "  make test           Run the full test suite"
+	@echo "  make test-unit      Run unit tests (e.g., docker-compose verification)"
+	@echo "  make typecheck      Run Mypy static type checking"
+	@echo "  make lint           Run Ruff code linting checks"
+	@echo "  make lint-fix       Run Ruff and auto-fix safe lint violations"
+	@echo "  make format         Format code using Black and Ruff"
+	@echo "  make docker-up      Start local services via Docker Compose"
+	@echo "  make docker-down    Stop local Docker services"
+	@echo "  make clean          Clean up build artifacts and cache files"
+
+install:
+	uv sync --all-extras
+
+test:
+	uv run pytest
+
+test-unit:
+	uv run pytest tests/unit/test_docker_compose.py
+
+lint:
+# Linting with auto-fix enabled
+	uv run ruff check --fix .
+# Code Formatting
+	uv run ruff format .
+# Typechecking
+	uv run mypy .
+
+ruff-check-tb:
+# Linting with auto-fix enabled (Ruff stack traces)
+	uv run ruff check --fix --show-files .
+
+mypy-tb:
+# Typechecking (Mypy internal stack traces)
+	uv run mypy . --tb
+
+docker-up:
+	docker-compose up -d --build
+
+docker-down:
+	docker compose down
+
+clean:
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name ".pytest_cache" -exec rm -rf {} +
+	find . -type d -name ".mypy_cache" -exec rm -rf {} +
+	find . -type d -name ".ruff_cache" -exec rm -rf {} +
+
+clean-ps:
+	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
+</file>
+
+<file path="backend/main.py">
+# backend/main.py
+# This file defines the main FastAPI application instance.
+import contextlib
+from collections.abc import AsyncIterator
+from arq import create_pool
+from arq.connections import RedisSettings
+from fastapi import FastAPI
+from backend.api.middleware.logging_middleware import LoggingMiddleware
+from backend.api.middleware.metrics_middleware import MetricsMiddleware
+# Import the health router
+from backend.api.routers import health, system, webhooks
+from backend.core.config import settings
+from backend.core.logger import setup_logging
+from backend.core.telemetry import setup_telemetry
+# Initialize structured logging before app startup
+setup_logging()
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Startup: Initialize ARQ Redis pool and attach to app state
+    app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    yield
+    # Shutdown: Close Redis connection
+    if hasattr(app.state, "redis"):
+        await app.state.redis.close()
+app = FastAPI(
+    title="CodeGraph Enterprise Platform",
+    description="Enterprise Developer Intelligence Platform API",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+# Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(LoggingMiddleware)
+# Register Routers
+app.include_router(system.router)
+app.include_router(webhooks.router)
+# Register the database-checking health router
+app.include_router(health.router)
+# Initialize OpenTelemetry for Distributed Tracing
+setup_telemetry(app)
 </file>
 
 <file path="docs/epics/requirements.md">
@@ -3926,15 +3939,16 @@ services:
       - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
     volumes:
-      - ./.docker-data/kafka:/apache/kafka
+      - ./.docker-data/kafka:/tmp/kafka-logs
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: codegraph-kafka-ui
     ports:
       - "8080:8080"
     environment:
+      - DYNAMIC_CONFIG_ENABLED=true
       - KAFKA_CLUSTERS_0_NAME=CodeGraph-Local
-      # FIX: Connect via the INTERNAL Docker network listener port
+      # Connect via the INTERNAL Docker network listener port
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
     depends_on:
       - kafka
@@ -3944,7 +3958,8 @@ services:
       - "6379:6379"
   api:
     build: .
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    # command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    command: ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     env_file:
@@ -3953,7 +3968,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - NEO4J_URI=bolt://neo4j:7687
       - DATABASE_URL=postgresql://postgres:codegraph_secret@postgres:5432/codegraph
-      - OTLP_ENDPOINT=http://jaeger:4317
+      # - OTLP_ENDPOINT=jaeger:4317
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
     depends_on:
       postgres:
         condition: service_healthy
@@ -3961,9 +3977,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # ADD THESE LINES to mount local code (with an anonymous volume to protect the Linux .venv)
+    volumes:
+      - .:/app
+      - /app/.venv
   worker:
     build: .
-    # command: arq backend.worker.WorkerSettings
     command: ["uv", "run", "arq", "backend.worker.WorkerSettings"]
     env_file:
       - .env
@@ -3971,11 +3990,13 @@ services:
       - REDIS_URL=redis://redis:6379
       - KAFKA_URL=kafka:29092
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      # ADD THIS LINE so the worker knows where Jaeger lives on the network
+      # - OTLP_ENDPOINT=jaeger:4317
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
     depends_on:
       - redis
       - kafka
     volumes:
-      # Required if we want to test locally without rebuilding images
       - .:/app
       - /app/.venv
 volumes:

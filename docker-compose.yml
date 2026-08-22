@@ -81,7 +81,7 @@ services:
       - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
     volumes:
-      - ./.docker-data/kafka:/apache/kafka
+      - ./.docker-data/kafka:/tmp/kafka-logs
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -89,8 +89,9 @@ services:
     ports:
       - "8080:8080"
     environment:
+      - DYNAMIC_CONFIG_ENABLED=true
       - KAFKA_CLUSTERS_0_NAME=CodeGraph-Local
-      # FIX: Connect via the INTERNAL Docker network listener port
+      # Connect via the INTERNAL Docker network listener port
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
     depends_on:
       - kafka
@@ -102,7 +103,8 @@ services:
 
   api:
     build: .
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    # command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    command: ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     env_file:
@@ -111,7 +113,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - NEO4J_URI=bolt://neo4j:7687
       - DATABASE_URL=postgresql://postgres:codegraph_secret@postgres:5432/codegraph
-      - OTLP_ENDPOINT=http://jaeger:4317
+      # - OTLP_ENDPOINT=jaeger:4317
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,10 +122,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # ADD THESE LINES to mount local code (with an anonymous volume to protect the Linux .venv)
+    volumes:
+      - .:/app
+      - /app/.venv
 
   worker:
     build: .
-    # command: arq backend.worker.WorkerSettings
     command: ["uv", "run", "arq", "backend.worker.WorkerSettings"]
     env_file:
       - .env
@@ -130,11 +136,13 @@ services:
       - REDIS_URL=redis://redis:6379
       - KAFKA_URL=kafka:29092
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      # ADD THIS LINE so the worker knows where Jaeger lives on the network
+      # - OTLP_ENDPOINT=jaeger:4317
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
     depends_on:
       - redis
       - kafka
     volumes:
-      # Required if we want to test locally without rebuilding images
       - .:/app
       - /app/.venv
 

@@ -3,73 +3,46 @@
 # This file configures OpenTelemetry for distributed tracing across the platform.
 
 import os
+import logging
 from typing import Any
-
 from fastapi import FastAPI
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
-from opentelemetry.util._once import Once
 
+logger = logging.getLogger(__name__)
 
 def setup_telemetry(
-    app: FastAPI, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
+    app: FastAPI | None = None, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
 ) -> None:
-    """Initializes OpenTelemetry tracing and instruments the FastAPI app (AC 1 & 2)."""
-
-    # --- THE RESTORED IDEMPOTENCY BLOCK ---
-    current_provider = trace.get_tracer_provider()
-
-    if hasattr(current_provider, "add_span_processor"):
-        if exporter is not None:
-            current_provider.add_span_processor(SimpleSpanProcessor(exporter))
-        try:
+    try:
+        # 1. Create Resource and Provider unconditionally
+        resource = Resource(attributes={SERVICE_NAME: service_name})
+        sdk_provider = TracerProvider(resource=resource)
+        
+        # 2. Add Exporter
+        if exporter is None:
+            endpoint = os.getenv("OTLP_ENDPOINT", "http://jaeger:4318/v1/traces")
+            otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
+            # Flush every 1000ms instead of 5000ms for rapid local observability
+            processor: Any = BatchSpanProcessor(otlp_exporter, schedule_delay_millis=1000)
+        else:
+            processor = SimpleSpanProcessor(exporter)
+            
+        sdk_provider.add_span_processor(processor)
+        trace.set_tracer_provider(sdk_provider)
+        
+        # 3. Instrument FastAPI explicitly if provided
+        if app is not None:
             FastAPIInstrumentor().instrument_app(app)
-        except Exception:
-            pass
-        return
-    # --------------------------------------
-
-    # 1. Create a new TracerProvider for the service
-    resource = Resource(attributes={SERVICE_NAME: service_name})
-    sdk_provider = TracerProvider(resource=resource)
-
-    if exporter is None:
-        # Production/Local Docker route: OTLP exporter pushing to Jaeger
-        endpoint = os.getenv("OTLP_ENDPOINT", "http://localhost:4317")
-        otlp_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
-        processor: Any = BatchSpanProcessor(otlp_exporter)
-    else:
-        # Testing route: pushes spans to memory sequentially
-        processor = SimpleSpanProcessor(exporter)
-
-    sdk_provider.add_span_processor(processor)
-
-    # 2. Reset OTEL lock to allow overriding the provider during Pytest runs
-    if hasattr(trace, "_TRACER_PROVIDER_SET_ONCE"):
-        trace._TRACER_PROVIDER_SET_ONCE = Once()
-
-    # 3. Safely set global provider so ProxyTracers correctly route to it
-    trace.set_tracer_provider(sdk_provider)
-
-    # 4. Instrument the app securely
-    try:
-        # Uninstrument first to prevent Duplicate Instrumentation warnings in Pytest
-        FastAPIInstrumentor().uninstrument_app(app)
-    except Exception:
-        pass
-
-    try:
-        # Re-instrument with the newly attached provider
-        FastAPIInstrumentor().instrument_app(app)
-    except Exception:
-        pass
-
+            
+        logger.info(f"OpenTelemetry successfully initialized for {service_name}")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenTelemetry: {e}", exc_info=True)
 
 def instrument_db_engine(engine: Any) -> None:
-    """AC 3: Helper to instrument SQLAlchemy engines once initialized."""
     SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})

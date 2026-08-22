@@ -36,7 +36,7 @@ class EntityExtracted(CodeGraphEvent[Any]):
     entity_type: str = Field(..., description="Class, Function, Interface, etc.")
     name: str
     docstring: str | None = None
-    data: Any | None = None
+    data: Any = None
 
 
 class RelationshipExtracted(CodeGraphEvent[Any]):
@@ -46,7 +46,7 @@ class RelationshipExtracted(CodeGraphEvent[Any]):
     source_file: str
     target_module: str
     relationship_type: str = Field(..., description="IMPORTS, INHERITS, CALLS")
-    data: Any | None = None
+    data: Any = None
 
 
 class DependencyDetected(CodeGraphEvent[Any]):
@@ -57,4 +57,4 @@ class DependencyDetected(CodeGraphEvent[Any]):
     package_manager: str
     package_name: str
     version_constraint: str | None = None
-    data: Any | None = None
+    data: Any = None

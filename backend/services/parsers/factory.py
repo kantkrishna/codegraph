@@ -70,4 +70,4 @@ async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None
 
     except Exception as e:
         # Log the error and continue processing other files
-        logger.error(f"Failed to process discovered file {event.file_path}: {e}")
+        logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)
