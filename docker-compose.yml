@@ -80,6 +80,9 @@ services:
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+      # Enable local consumer loops
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
     volumes:
       - ./.docker-data/kafka:/tmp/kafka-logs
 
@@ -101,6 +104,25 @@ services:
     container_name: codegraph-redis
     ports:
       - "6379:6379"
+
+  graph-builder:
+    build: .
+    container_name: codegraph-builder
+    restart: unless-stopped
+    command: ["uv", "run", "python", "-m", "etl.graph_builder.main"]
+    env_file:
+      - .env
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - KAFKA_URL=kafka:29092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+    depends_on:
+      - kafka
+      - neo4j
+    volumes:
+      - .:/app
+      - /app/.venv
 
   api:
     build: .

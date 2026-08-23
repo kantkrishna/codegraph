@@ -185,6 +185,56 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
 
 * **Idempotency Proof**: Run the exact same command a second time. Go to Neo4j UI (`http://localhost:7474`), run `MATCH (n) RETURN count(n);`. The count must remain exactly the same as the first run, proving duplicates are not created.
 
+#### Test ID: FT-6.3 (Epic 6: Knowledge Graph Visualization & Provenance)
+
+* **Objective**: Validate that the ingested repository data has been successfully translated into interconnected graph nodes (AST parsing, dependencies) and strictly adheres to ADR-026 Source Provenance tracking.
+* **Preconditions**: FT-4.0 has passed, the `codegraph-builder` consumer is actively running, and the Kafka `events.knowledge.extracted` topic has been drained into Neo4j.
+* **Exact Steps**:
+  1. Open a browser and navigate to `http://localhost:7474` (Neo4j Browser UI).
+  2. Authenticate using the `.env` credentials (`neo4j` / `codegraph_secret`).
+  3. Execute the following three Cypher queries in the terminal prompt at the top of the UI:
+
+  **Query 1: Fully parsed Python Classes and Functions**
+
+  ```cypher
+  MATCH (f:File)-[:CONTAINS]->(entity)
+  RETURN f, entity 
+  LIMIT 100;
+  ```
+  
+  * *Expected Output*: Fully parsed Python classes and functions represented as interconnected graph nodes.
+  
+  **Query 2: Structural Extraction (Classes & Functions)**
+  ```cypher
+  MATCH (c:Class)
+  RETURN c.name, c.node_id
+  LIMIT 25;
+  ```
+
+  * *Expected Output*: A table or graph displaying authentic classes extracted from the source code (e.g., `Config`, `ComplexCLI`, `TestType` if testing the `click` repository), mapped to their exact deterministic `node_id`.
+
+  **Query 3: Dependency & Import Mapping**
+
+  ```cypher
+  MATCH (f:File)-[r:DEPENDS_ON|IMPORTS]->(target)
+  RETURN f.name, type(r), target
+  LIMIT 50;
+  ```
+
+  * *Expected Output*: Relationships showing physical `.py` files pointing to target modules via `IMPORTS` (e.g., `validation.py` -> `module:urllib`). *Note: `DEPENDS_ON` may return empty if the test repository uses `pyproject.toml` instead of `requirements.txt`.*
+
+  **Query 4: Data Provenance Tracking (ADR-026)**
+
+  ```cypher
+  MATCH ()-[r:CONTAINS]->()
+  RETURN r.source_system, r.timestamp, count(r) AS total_edges;
+  ```
+
+  * *Expected Output*: An aggregate count of edges grouped by their source system (e.g., `ast_parser` or `github`) and timestamp, proving that every structural relationship maintains strict auditability.
+  
+* **PASS**: The Neo4j UI successfully renders interactive graphs and tables for all three queries, confirming that raw source code has been translated into an accurate, auditable, and queryable Knowledge Graph.
+* **Business Value Demonstrated**: Proves the platform can automatically discover hidden architectural context (defeating knowledge silos), map internal/external dependencies for blast radius calculation, and maintain strict data governance via timestamped provenance.
+
 ---
 
 ### 5. End-to-End Ingestion Flow (Repository to Kafka)
@@ -220,13 +270,13 @@ We must prove that the End-to-End flow in Step 5 generated traces across service
 * Under "Service", select `codegraph-worker` (if instrumented). You should see child spans for `clone_repository_task`.
 
 
-2. **Correlation Proof**:
-* Expand a trace in Jaeger. Note the `Trace ID`.
-* Run `docker logs codegraph-api | grep <Trace ID>`.
-* **PASS**: The log payload contains the matching Trace ID, proving full correlation between structured logs and distributed tracing.
-
-
-
+2. **Correlation Proof**
+* **Objective:** Prove that the FastAPI application is emitting structured JSON logs that correspond to the activity seen in Jaeger.
+* **Execution:** Run the following command to retrieve the most recent webhook logs from the API:
+  
+  **For Windows (PowerShell):**
+  ```powershell
+  docker logs codegraph-api 2>&1 | Select-String "/api/v1/webhooks/github" | Select-Object -Last 2
 
 3. **Dead Letter Queue (DLQ)**:
 * Stop Kafka (`docker-compose stop kafka`).

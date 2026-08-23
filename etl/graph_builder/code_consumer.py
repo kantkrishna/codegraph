@@ -6,7 +6,7 @@ import os
 from datetime import UTC, datetime
 
 from backend.graph.mutation_service import GraphMutationService
-from backend.models.events import DependencyDetected, EntityExtracted
+from backend.models.events import DependencyDetected, EntityExtracted, RelationshipExtracted
 from etl.graph_builder.telemetry import with_graph_telemetry
 
 
@@ -61,4 +61,28 @@ class CodeGraphConsumer:
             "timestamp": datetime.now(UTC).isoformat(),
             "version_constraint": event.version_constraint or "",
         }
-        self.mutation_service.upsert_edge(file_node_id, package_node_id, "DEPENDS_ON", provenance)
+        self.mutation_service.upsert_edge(
+            file_node_id, package_node_id, "DEPENDS_ON", provenance
+        )
+
+    @with_graph_telemetry("consume_relationship_extracted")
+    async def handle_relationship_extracted(self, event: RelationshipExtracted) -> None:
+        """Translates RelationshipExtracted events into IMPORTS edges."""
+        source_file_id = f"file:{event.repository_id}:{event.source_file}"
+        target_node_id = f"module:{event.target_module}"
+        
+        # Ensure target node exists (using Service as a fallback label for external/other modules)
+        self.mutation_service.upsert_node(
+            "Service",  
+            {"node_id": target_node_id, "name": event.target_module},
+        )
+        
+        provenance = {
+            "source_system": event.source,
+            "source_uri": event.source_file,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        
+        self.mutation_service.upsert_edge(
+            source_file_id, target_node_id, event.relationship_type, provenance
+        )

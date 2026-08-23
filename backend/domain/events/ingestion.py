@@ -8,6 +8,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, TypeAdapter
 
 from backend.domain.events.base import CodeGraphEvent
+from backend.models.events import (
+    DependencyDetected,
+    EntityExtracted,
+    RelationshipExtracted,
+)
 
 
 # --- Payloads ---
@@ -43,12 +48,6 @@ class DocumentationLinkedPayload(BaseModel):
     node_id: str
     entity_name: str
     confidence: float
-
-
-# backend/domain/events/ingestion.py
-#
-# This file defines the specific ingestion events used in Epic 4 and Epic 5.
-# (Note: Keep your existing Epic 3 models like RepositoryIndexedEvent untouched above these)
 
 
 class FileDiscovered(CodeGraphEvent[Any]):
@@ -102,7 +101,9 @@ class DocumentationLinkedEvent(CodeGraphEvent[DocumentationLinkedPayload]):
 
 # --- Polymorphic Router ---
 IngestionEvent = (
-    RepositoryIndexedEvent | CommitDetectedEvent | ServiceAddedEvent | DocumentationUpdatedEvent
+    RepositoryIndexedEvent | CommitDetectedEvent | ServiceAddedEvent | DocumentationUpdatedEvent |
+    DocumentationLinkedEvent | FileDiscovered | DocumentationUpdated | ADRCreated |
+    EntityExtracted | RelationshipExtracted | DependencyDetected
 )
 
 # TypeAdapter configured with a discriminator allows mapping arbitrary dictionaries

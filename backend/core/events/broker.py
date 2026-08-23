@@ -2,10 +2,13 @@
 #
 # This file manages the async connection to the Apache Kafka broker.
 
+# backend/core/events/broker.py
 import asyncio
 import logging
 import os
+
 from aiokafka import AIOKafkaProducer
+
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,10 @@ class EventBroker:
             or os.getenv("KAFKA_URL")
             or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
         )
+        
+        # <--- FIX: Overwrite the hardcoded default with the dynamically resolved Docker URL
+        self.bootstrap_servers = bootstrap_servers
+        
         for attempt in range(1, retries + 1):
             try:
                 logger.info(f"Connecting to event broker at {bootstrap_servers} (Attempt {attempt}/{retries})...")
@@ -35,13 +42,11 @@ class EventBroker:
                 return
             except Exception as e:
                 logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
-                # FIX: Explicitly shut down the orphaned producer to prevent memory leaks/warnings
                 if self._producer:
                     try:
                         await self._producer.stop()
                     except Exception:
                         pass
-                
                 if attempt < retries:
                     await asyncio.sleep(delay)
                 else:
