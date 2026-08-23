@@ -101,9 +101,17 @@ class DocumentationLinkedEvent(CodeGraphEvent[DocumentationLinkedPayload]):
 
 # --- Polymorphic Router ---
 IngestionEvent = (
-    RepositoryIndexedEvent | CommitDetectedEvent | ServiceAddedEvent | DocumentationUpdatedEvent |
-    DocumentationLinkedEvent | FileDiscovered | DocumentationUpdated | ADRCreated |
-    EntityExtracted | RelationshipExtracted | DependencyDetected
+    RepositoryIndexedEvent
+    | CommitDetectedEvent
+    | ServiceAddedEvent
+    | DocumentationUpdatedEvent
+    | DocumentationLinkedEvent
+    | FileDiscovered
+    | DocumentationUpdated
+    | ADRCreated
+    | EntityExtracted
+    | RelationshipExtracted
+    | DependencyDetected
 )
 
 # TypeAdapter configured with a discriminator allows mapping arbitrary dictionaries

@@ -15,6 +15,7 @@ from backend.services.git_service import clone_and_process_repository
 
 tracer = trace.get_tracer(__name__)
 
+
 async def clone_repository_task(
     ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
 ) -> None:

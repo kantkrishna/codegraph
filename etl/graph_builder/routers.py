@@ -21,7 +21,9 @@ def register_graph_consumers(
     # Map Code/AST Events (US-6.3)
     code_consumer.register("EntityExtracted", code_graph_handler.handle_entity_extracted)
     code_consumer.register("DependencyDetected", code_graph_handler.handle_dependency_detected)
-    code_consumer.register("RelationshipExtracted", code_graph_handler.handle_relationship_extracted)
+    code_consumer.register(
+        "RelationshipExtracted", code_graph_handler.handle_relationship_extracted
+    )
 
     # Map Documentation Events (US-6.4)
     doc_consumer.register("DocumentationUpdated", doc_graph_handler.handle_documentation_updated)
