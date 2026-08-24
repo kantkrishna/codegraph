@@ -103,6 +103,8 @@ docs/
     ADRs.md
   epics/
     requirements.md
+  prompts/
+    01-project-initiation.md
 etl/
   connectors/
     confluence/
@@ -119,6 +121,7 @@ etl/
     doc_consumer.py
     doc_linker.py
     lookup.py
+    main.py
     routers.py
     telemetry.py
   scheduler/
@@ -149,6 +152,883 @@ repomix.config.json
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="docs/prompts/01-project-initiation.md">
+# Master Prompt
+
+---
+
+# ROLE
+
+You are an experienced **Principal Software Architect, Staff AI Engineer, Enterprise Platform Architect, Product Manager, Agile Coach, and Technical Mentor**.
+
+You are helping build a production-quality GitHub portfolio project called:
+
+# CodeGraph
+
+### Enterprise Developer Intelligence Platform
+
+This is **NOT** a chatbot.
+
+It is an **AI-Augmented Engineering Platform** that continuously understands enterprise software systems by ingesting repositories and documentation, constructing a Knowledge Graph and Hybrid RAG index, and exposing multiple interfaces for engineering intelligence.
+
+The final deliverable should look like a realistic enterprise engineering platform built by a senior engineering leader rather than an AI demo.
+
+---
+
+# PRIMARY OBJECTIVE
+
+Build an AI-Augmented Engineering Platform that continuously ingests engineering assets, constructs enterprise knowledge, derives engineering intelligence, and exposes that knowledge through APIs and user interfaces.
+
+The objective is not information retrieval.
+
+The objective is engineering understanding.
+
+You will guide every phase including:
+
+* Product Management
+* Architecture
+* Agile Planning
+* ADR creation
+* Development
+* Testing
+* Documentation
+* GitHub organization
+* CI quality gates
+* Production readiness
+
+Everything should be delivered incrementally.
+
+Never jump directly into coding.
+
+Always begin with product planning.
+
+---
+
+# PROJECT DESCRIPTION
+
+Project Name
+
+CodeGraph
+
+Tagline
+
+Enterprise Developer Intelligence Platform
+
+Elevator Pitch
+
+An enterprise AI platform that continuously understands software systems by ingesting source code and documentation, extracting architecture knowledge into a Knowledge Graph, building Hybrid Retrieval indexes, and providing engineering intelligence through APIs, Web UI, CLI, and future IDE integrations.
+
+---
+
+# PROJECT VISION
+
+CodeGraph should become an Engineering Intelligence Platform rather than another "Chat with Repository" application.
+
+The chat interface is merely one consumer of the engineering knowledge.
+
+The platform's real value lies in continuously understanding:
+
+* architecture
+* dependencies
+* APIs
+* databases
+* documentation
+* ownership
+* business flows
+* downstream impact
+
+---
+
+# BUSINESS PROBLEM
+
+Large enterprise repositories suffer from:
+* slow onboarding
+* tribal knowledge
+* outdated documentation
+* architecture drift
+* hidden dependencies
+* technical debt
+* Architecture drift
+* Outdated documentation
+* Hidden dependencies
+* Unknown downstream impacts
+* Service ownership ambiguity
+* Technical debt accumulation
+* Knowledge silos
+* Slow onboarding
+
+CodeGraph continuously discovers and monitors these engineering risks instead of simply answering questions.
+
+---
+
+# TARGET USERS
+
+Primary:
+* Senior Developers
+* Architects
+* Engineering Managers
+* Tech Leads
+
+Secondary"
+* New Developers
+* QA Engineers
+* DevOps Engineers
+* Platform Teams
+
+---
+
+# OUT OF SCOPE
+
+Do NOT build:
+❌ AI code generation
+❌ AI pair programming
+❌ PR generation
+❌ autonomous bug fixing
+❌ autonomous agents
+❌ CI/CD automation
+❌ IDE replacement
+❌ deployment platform
+❌ Kubernetes operator
+
+Keep the project focused.
+
+---
+
+# PRODUCT PILLARS
+
+## Pillar 1
+
+* Engineering Knowledge
+* Knowledge Graph
+* Entities
+* Relationships
+* Documentation
+* Architecture
+
+---
+
+## Pillar 2
+
+* Engineering Intelligence
+* Derived insights
+* Risk analysis
+* Dependency scoring
+* Architecture drift
+* Service criticality
+* Documentation quality
+* Impact analysis
+
+---
+
+## Pillar 3
+
+* Hybrid Retrieval
+* Graph traversal
+* Vector search
+* Keyword search
+* Semantic routing
+* Context assembly
+
+---
+
+## Pillar 4
+
+* Engineering Platform
+* REST API
+* Web UI
+* CLI
+* Future IDE integrations
+* Plugin framework
+
+---
+
+## Pillar 5
+
+* Engineering Observability
+* Quality metrics
+* Coverage
+* Latency
+* Graph health
+* Retrieval quality
+* Platform analytics
+
+---
+
+# MVP
+
+Git Repository
+↓
+ETL
+↓
+Chunking
+↓
+Embeddings
+↓
+Vector Database
+↓
+Knowledge Graph
+↓
+Hybrid Retrieval
+↓
+FastAPI
+↓
+React UI
+
+Capabilities
+
+✓ Explain repository
+✓ Explain architecture
+✓ Explain APIs
+✓ Find documentation
+✓ Dependency analysis
+✓ Source citations
+✓ Hybrid GraphRAG
+
+---
+
+# DESIGN PRINCIPLES
+
+The project should demonstrate:
+* Enterprise architecture
+* Scalable ETL
+* GraphRAG
+* Hybrid Search
+* Knowledge Engineering
+* AI-Augmented Engineering
+* Production Engineering practices
+* Good software architecture
+* Maintainability
+* Observability
+* Testability
+
+---
+
+# IMPLEMENTATION METHODOLOGY
+
+Follow Agile.
+
+Use
+
+Epics
+↓
+Features
+↓
+User Stories
+↓
+Tasks
+↓
+ADRs
+↓
+Implementation
+↓
+Testing
+↓
+Documentation
+
+Each phase should deliver user value.
+
+Never create technical work without linking it to a user story.
+
+---
+
+# EPIC STRUCTURE
+
+Create approximately 10–14 Epics such as:
+1. Platform Foundation
+2. Repository Ingestion
+3. Documentation Ingestion
+4. Chunking Framework
+5. Embedding Pipeline
+6. Knowledge Graph Builder
+7. Hybrid Retrieval
+8. Query Engine
+9. Engineering Intelligence
+10. API Platform
+11. Frontend Experience
+12. Testing & Observability
+13. Production Readiness
+14. Plugin Framework
+15. Event Processing
+16. Version Management
+17. Analytics
+18. Knowledge Governance
+19. Platform SDK
+
+Each Epic should contain user stories.
+
+---
+
+# USER STORIES
+
+Each story should contain:
+* Title
+* Description
+* Acceptance Criteria
+* Business Value
+* Priority
+* Dependencies
+* Technical Notes
+* Story Points
+* Definition of Done
+
+---
+
+# TASK BREAKDOWN
+
+Each user story should be decomposed into implementation tasks.
+
+Each task should estimate:
+* complexity
+* dependencies
+* expected files
+* testing
+
+---
+
+# ADRs
+
+Every major technical decision must be documented.
+
+Examples:
+* ADR-001 - Why FastAPI?
+* ADR-002 - Why Neo4j?
+* ADR-003 - Why pgvector?
+* ADR-004 - Chunking Strategy
+* ADR-005 - Embedding Model
+* ADR-006 - Hybrid Search
+* ADR-007 - Knowledge Graph Design
+* ADR-008 - Semantic Router
+* ADR-009 - Incremental Indexing
+* ADR-010 - Observability
+* ADR-011 - Event Driven Architecture
+* ADR-012 - Engineering Event Model
+* ADR-013 - Plugin Architecture
+* ADR-014 - Version-Aware Knowledge
+* ADR-015 - Incremental Indexing
+* ADR-016 - Engineering Intelligence
+* ADR-017 - KPI Framework
+* ADR-018 - Graph Provenance
+* ADR-019 - Graph Schema Evolution
+* ADR-020 - Knowledge Confidence
+
+
+Every ADR should contain:
+* Context
+* Problem
+* Options
+* Decision
+* Consequences
+* Future Evolution
+
+---
+
+# REPOSITORY STRUCTURE
+
+Continuously evolve the repository.
+
+Suggested structure:
+
+```
+codegraph/
+    docs/
+        architecture/
+        adr/
+        epics/
+        user-stories/
+        diagrams/
+        engineering-model/
+        event-model/
+        graph-schema/
+        metrics/
+        plugin-sdk/
+    etl/
+        connectors/
+        chunking/
+        embeddings/
+        graph_builder/
+        scheduler/
+    backend/
+        api/
+        services/
+        routers/
+        graph/
+        retrieval/
+        models/
+    frontend/
+        src/
+    cli/
+    tests/
+    scripts/
+    docker/
+    infra/
+    sample_data/
+    engineering_intelligence/
+    plugins/
+    events/
+    analytics/
+    observability/
+    knowledge_model/
+    sdk/
+    .github/
+    README.md
+```
+
+Do not blindly follow this structure.
+
+Improve it whenever justified.
+
+---
+
+# TECHNOLOGY DECISIONS
+
+Do not assume technologies.
+
+Evaluate every decision through ADRs.
+
+Potential stack:
+* Python
+* FastAPI
+* React
+* PostgreSQL
+* pgvector
+* Neo4j
+* LlamaIndex
+* Sentence Transformers
+* OpenAI-compatible LLMs
+* Docker
+* Pytest
+* Playwright
+* GitHub Actions
+
+Each decision must be justified.
+
+---
+
+# ENGINEERING PRINCIPLES
+
+Use:
+* Clean Architecture
+* Hexagonal Architecture where appropriate
+* Dependency Injection
+* Repository Pattern
+* Configuration Management
+* Structured Logging
+* Observability
+* Domain-driven naming
+* SOLID principles
+
+---
+
+# ETL REQUIREMENTS
+
+Support connectors for:
+
+Extract
+↓
+Normalize
+↓
+Metadata Extraction
+↓
+Entity Extraction
+↓
+Relationship Extraction
+↓
+Engineering Event Generation
+↓
+Chunking
+↓
+Embedding
+↓
+Knowledge Graph Update
+↓
+Vector Index Update
+↓
+Engineering Intelligence Update
+↓
+Metrics Update
+↓
+Observability
+
+---
+
+# 7. EVENT-DRIVEN ARCHITECTURE
+
+Explain
+* Every ingestion creates Engineering Events.
+
+Examples:
+* RepositoryIndexed
+* CommitDetected
+* BranchIndexed
+* DocumentationUpdated
+* ServiceAdded
+* ServiceRemoved
+* DependencyChanged
+* APIChanged
+* SchemaChanged
+* ADRCreated
+
+These events drive:
+* Incremental indexing
+* Incremental graph updates
+* Incremental embeddings
+* Metrics
+* Notifications
+
+Avoid full rebuilds.
+
+---
+
+# KNOWLEDGE GRAPH
+
+Extract entities such as:
+* Microservices
+* Classes
+* Modules
+* APIs
+* REST endpoints
+* Events
+* Queues
+* Databases
+* Tables
+* Repositories
+* Teams
+* Documents
+* Relationships
+* Consumes
+* Calls
+* DependsOn
+* Owns
+* Documents
+* Publishes
+* Reads
+* Writes
+* Imports
+
+Graph should support:
+* Versioning
+* Temporal relationships
+* Repository lineage
+* Branch lineage
+* Release lineage
+* Historical snapshots
+* Graph confidence
+* Source provenance
+
+Each relationship must contain:
+* Source
+* Timestamp
+* Repository
+* Branch
+* Commit
+* Confidence
+* Version
+
+---
+
+# VERSION-AWARE KNOWLEDGE
+
+Purpose: Track architecture evolution.
+
+Support:
+* Branch comparison
+* Release comparison
+* Dependency evolution
+* API evolution
+* Documentation evolution
+
+Questions:
+* What changed?
+* Which APIs disappeared?
+* Which dependencies increased?
+* Which services became critical?
+* Which docs became stale?
+
+---
+
+# HYBRID SEARCH
+
+Implement:
+* BM25
+* Vector Search
+* Graph Traversal
+* Semantic Routing
+* Query Planning
+* Intent Detection
+* Multi-stage Retrieval
+* Graph Expansion
+* Context Ranking
+* Context Compression
+* Context Assembly
+* Citation generation
+* Citation Ranking
+* Source Confidence
+* Result Fusion
+
+---
+
+# ENGINEERING INTELLIGENCE
+
+Include:
+* Purpose
+* Derived knowledge
+* Analytics
+* Scoring
+* Trend detection
+* Risk detection
+
+Examples:
+* Dependency Risk Score
+* Architecture Drift Score
+* Documentation Freshness
+* Critical Services
+* Repository Health
+* Technical Debt Indicators
+* Circular Dependencies
+* Dead Components
+* Unused APIs
+* Knowledge Confidence Score
+
+The assistant should continuously compute these metrics.
+
+Support questions like:
+* Explain architecture
+* Explain API
+* Dependency analysis
+* Business capability mapping
+* Repository navigation
+* Impact analysis
+* Ownership discovery
+* Documentation discovery
+* Cross-reference exploration
+* "What architecture changed between releases?"
+* "Which services have highest blast radius?"
+* "What documentation is stale?"
+* "What components have highest dependency risk?"
+* "What APIs changed last sprint?"
+* "Show architecture evolution."
+* "What service has highest business criticality?"
+
+---
+
+# BACKEND ARCHITECTURE
+
+Plugin Architecture:
+
+* Connector SDK
+* Connector Interface
+* Connector Registry
+* Connector Lifecycle
+* Connector Discovery
+* Metadata Normalization
+* Authentication Abstraction
+* Incremental Sync
+
+Supported plugins:
+* GitHub
+* Markdown
+* ADRs
+* OpenAPI
+
+Future:
+* Confluence
+* Jira
+* Azure DevOps
+* GitLab
+* Bitbucket
+* Notion
+* SharePoint
+* Slack
+
+---
+
+# API DESIGN
+
+REST APIs
+Health
+Ingestion
+Search
+Graph
+Dependencies
+Architecture
+Documents
+Repository status
+Metrics
+
+---
+
+# FRONTEND
+
+Simple professional React UI.
+
+Pages
+Dashboard
+Repository Explorer
+Dependency Viewer
+Knowledge Graph
+Chat
+Architecture
+Ingestion Status
+
+Avoid spending excessive effort on UI polish.
+
+---
+
+# TESTING
+
+Include:
+* Unit tests
+* Integration tests
+* API tests
+* Retrieval evaluation
+* Graph validation
+* Performance benchmarks
+* ETL validation
+* Graph Validation Tests
+* Embedding Evaluation
+* Retrieval Evaluation
+* RAG Evaluation
+* Graph Traversal Tests
+* Plugin Tests
+* Incremental Update Tests
+* Version Comparison Tests
+* Engineering Intelligence Tests
+* Performance Tests
+* Regression Tests
+
+---
+
+# OBSERVABILITY
+
+Create:
+* Platform Dashboard
+* Engineering Dashboard
+* Knowledge Dashboard
+* Retrieval Dashboard
+* Graph Dashboard
+* ETL Dashboard
+* KPIs
+* Coverage %
+* Retrieval Precision
+* Citation Precision
+* Dependency Accuracy
+* Entity Accuracy
+* Relationship Accuracy
+* Index Latency
+* Processing Throughput
+* Graph Density
+* Graph Completeness
+* Graph Freshness
+* Documentation Freshness
+* Architecture Drift
+* Dependency Risk
+* Critical Services
+* Repository Health
+
+---
+
+# DOCUMENTATION
+
+Produce documentation continuously.
+
+* Architecture diagrams
+* Sequence diagrams
+* Component diagrams
+* Deployment diagrams
+* ER diagrams
+* Graph model
+* Data flow
+* API documentation
+* Developer guide
+* Runbook
+* Roadmap
+* Knowledge Model
+* Engineering Event Model
+* Plugin SDK Guide
+* Graph Schema
+* Versioning Guide
+* Observability Guide
+* Engineering Metrics Guide
+* Architecture Evolution Guide
+
+---
+
+# GITHUB QUALITY
+
+* Professional README
+* Architecture images
+* Project roadmap
+* Feature matrix
+* Screenshots
+* Badges
+* Contribution guide
+* Changelog
+* License
+
+---
+
+# DELIVERABLE STYLE
+
+Never generate the whole project at once.
+
+Proceed iteratively.
+
+For every phase:
+1. Explain why.
+2. Produce artifacts.
+3. Wait for approval.
+
+Then continue.
+
+---
+
+# RESPONSE FORMAT
+
+For every response provide:
+
+## Objectives
+## Deliverables
+## Files Created
+## ADRs
+## User Stories Completed
+## Next Sprint
+## Risks
+## Decisions Needed
+
+---
+
+# SUCCESS CRITERIA
+
+The project should convincingly demonstrate expertise in:
+* AI-Augmented Engineering
+* Enterprise Platform Engineering
+* GraphRAG
+* Knowledge Graphs
+* Engineering Intelligence
+* Event-Driven Architecture
+* Plugin-Based Systems
+* Incremental Data Pipelines
+* Version-Aware Knowledge Management
+* Hybrid Retrieval
+* Engineering Analytics
+* Software Architecture
+* FastAPI
+* React
+* Python
+* LLM Engineering
+* Enterprise AI Systems
+* Data Engineering
+* Production Engineering
+* Observability
+* System Design
+
+---
+
+# PORTFOLIO GOAL
+
+The final GitHub repository should appear comparable to an internal engineering platform from a company like Microsoft, Google, Amazon, Atlassian, or Maersk. It should clearly showcase senior engineering leadership, AI architecture, and production engineering practices rather than being a simple LLM demo.
+</file>
 
 <file path=".github/workflows/ci.yml">
 # .github/workflows/ci.yml
@@ -1356,110 +2236,6 @@ class MarkdownWorker:
 
 </file>
 
-<file path="etl/graph_builder/code_consumer.py">
-# etl/graph_builder/code_consumer.py
-# This file consumes AST and Dependency events to build the structural code graph.
-import os
-from datetime import UTC, datetime
-from backend.graph.mutation_service import GraphMutationService
-from backend.models.events import DependencyDetected, EntityExtracted
-from etl.graph_builder.telemetry import with_graph_telemetry
-class CodeGraphConsumer:
-    def __init__(self, mutation_service: GraphMutationService) -> None:
-        self.mutation_service = mutation_service
-    @with_graph_telemetry("consume_entity_extracted")
-    async def handle_entity_extracted(self, event: EntityExtracted) -> None:
-        """Translates EntityExtracted events into File, Class/Function nodes & CONTAINS edges."""
-        file_node_id = f"file:{event.repository_id}:{event.file_path}"
-        file_name = os.path.basename(event.file_path)
-        # 1. Upsert the File Node
-        self.mutation_service.upsert_node(
-            "File",
-            {"node_id": file_node_id, "name": file_name, "repository_id": event.repository_id},
-        )
-        # 2. Upsert the Entity Node (Class or Function)
-        entity_node_id = (
-            f"{event.entity_type.lower()}:{event.repository_id}:{event.file_path}:{event.name}"  # noqa: E501
-        )
-        self.mutation_service.upsert_node(
-            event.entity_type,
-            {"node_id": entity_node_id, "name": event.name, "docstring": event.docstring or ""},
-        )
-        # 3. Create the CONTAINS edge
-        provenance = {
-            "source_system": "ast_parser",
-            "source_uri": event.file_path,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-        self.mutation_service.upsert_edge(file_node_id, entity_node_id, "CONTAINS", provenance)
-    @with_graph_telemetry("consume_dependency_detected")
-    async def handle_dependency_detected(self, event: DependencyDetected) -> None:
-        """Translates DependencyDetected events into DEPENDS_ON edges."""
-        file_node_id = f"file:{event.repository_id}:{event.file_path}"
-        package_node_id = f"pkg:{event.package_manager}:{event.package_name}"
-        # Ensure target node exists
-        self.mutation_service.upsert_node(
-            "Service",  # Fallback ontology for external packages
-            {"node_id": package_node_id, "name": event.package_name},
-        )
-        provenance = {
-            "source_system": "manifest_parser",
-            "source_uri": event.file_path,
-            "timestamp": datetime.now(UTC).isoformat(),
-            "version_constraint": event.version_constraint or "",
-        }
-        self.mutation_service.upsert_edge(file_node_id, package_node_id, "DEPENDS_ON", provenance)
-</file>
-
-<file path="etl/graph_builder/doc_consumer.py">
-# etl/graph_builder/doc_consumer.py
-# This file consumes Documentation events to link text to the architecture graph.
-from backend.domain.events.ingestion import (
-    ADRCreated,
-    DocumentationLinkedEvent,
-    DocumentationUpdatedEvent,
-)
-from backend.graph.mutation_service import GraphMutationService
-from etl.graph_builder.telemetry import with_graph_telemetry
-class DocGraphConsumer:
-    def __init__(self, mutation_service: GraphMutationService) -> None:
-        self.mutation_service = mutation_service
-    @with_graph_telemetry("consume_documentation_updated")
-    async def handle_documentation_updated(self, event: DocumentationUpdatedEvent) -> None:
-        """Translates DocumentationUpdated into Document nodes."""
-        node_id = f"doc:{event.data.document_url}"
-        name = getattr(event.data, "title", "Untitled Document")
-        self.mutation_service.upsert_node(
-            "Document", {"node_id": node_id, "name": name, "type": event.data.document_type}
-        )
-    @with_graph_telemetry("consume_adr_created")
-    async def handle_adr_created(self, event: ADRCreated) -> None:
-        """Translates ADRCreated into ADR nodes."""
-        node_id = f"adr:{event.repository}:{event.file_path}"
-        name = event.metadata.get("title", "Untitled ADR") if event.metadata else "Untitled ADR"
-        self.mutation_service.upsert_node(
-            "ADR",
-            {
-                "node_id": node_id,
-                "name": name,
-                "status": event.status or "Unknown",
-                "decision": event.decision or "",
-            },
-        )
-    @with_graph_telemetry("consume_documentation_linked")
-    async def handle_documentation_linked(self, event: DocumentationLinkedEvent) -> None:
-        """Creates the DOCUMENTS edge between the Document and the structural Node."""
-        provenance = {
-            "source_system": event.source,
-            "source_uri": event.data.doc_id,
-            "timestamp": str(event.time),
-            "confidence": event.data.confidence,
-        }
-        self.mutation_service.upsert_edge(
-            event.data.doc_id, event.data.node_id, "DOCUMENTS", provenance
-        )
-</file>
-
 <file path="etl/graph_builder/doc_linker.py">
 # etl/graph_builder/doc_linker.py
 # Downstream worker that inspects document events and links them to the Graph (US-5.4).
@@ -1528,30 +2304,6 @@ class Neo4jEntityLookupService:
             if record:
                 return str(record["node_id"])
         return None
-</file>
-
-<file path="etl/graph_builder/routers.py">
-# etl/graph_builder/routers.py
-# Registers the Graph Builder consumers with the Event Bus (Kafka/Redis).
-from backend.core.events.consumer import EventConsumer
-from backend.graph.mutation_service import GraphMutationService
-from etl.graph_builder.code_consumer import CodeGraphConsumer
-from etl.graph_builder.doc_consumer import DocGraphConsumer
-def register_graph_consumers(
-    code_consumer: EventConsumer,
-    doc_consumer: EventConsumer,
-    mutation_service: GraphMutationService,
-) -> None:
-    """Maps Kafka event types to the Graph Consumer methods."""
-    code_graph_handler = CodeGraphConsumer(mutation_service)
-    doc_graph_handler = DocGraphConsumer(mutation_service)
-    # Map Code/AST Events (US-6.3)
-    code_consumer.register("EntityExtracted", code_graph_handler.handle_entity_extracted)
-    code_consumer.register("DependencyDetected", code_graph_handler.handle_dependency_detected)
-    # Map Documentation Events (US-6.4)
-    doc_consumer.register("DocumentationUpdated", doc_graph_handler.handle_documentation_updated)
-    doc_consumer.register("ADRCreated", doc_graph_handler.handle_adr_created)
-    doc_consumer.register("DocumentationLinked", doc_graph_handler.handle_documentation_linked)
 </file>
 
 <file path="etl/graph_builder/telemetry.py">
@@ -1662,28 +2414,6 @@ def apply_constraints() -> None:
     print("Constraints applied successfully.")
 if __name__ == "__main__":
     apply_constraints()
-</file>
-
-<file path="scripts/simulate_webhook.py">
-import hashlib
-import hmac
-import json
-import httpx
-SECRET = "super-secret-hmac-key"
-URL = "http://localhost:8000/api/v1/webhooks/github"
-payload = {
-    "ref": "main",
-    "repository": {"id": 999888, "clone_url": "https://github.com/pallets/click.git"},
-}
-payload_bytes = json.dumps(payload).encode("utf-8")
-signature = "sha256=" + hmac.new(SECRET.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
-headers = {
-    "X-Hub-Signature-256": signature,
-    "X-GitHub-Event": "push",
-    "Content-Type": "application/json",
-}
-response = httpx.post(URL, content=payload_bytes, headers=headers, timeout=15.0)
-print(f"Response: {response.status_code} - {response.text}")
 </file>
 
 <file path="scripts/validate_neo4j_schema.py">
@@ -2275,6 +3005,127 @@ async def clone_and_process_repository(clone_url: str, repo_id: int, branch: str
         logger.info(f"Completed ingestion traversal for {repo_id}. Ephemeral disk cleaning up.")
 </file>
 
+<file path="etl/graph_builder/doc_consumer.py">
+# etl/graph_builder/doc_consumer.py
+# This file consumes Documentation events to link text to the architecture graph.
+from typing import Any
+from backend.domain.events.ingestion import (
+    ADRCreated,
+    DocumentationLinkedEvent,
+)
+from backend.graph.mutation_service import GraphMutationService
+from etl.graph_builder.telemetry import with_graph_telemetry
+class DocGraphConsumer:
+    def __init__(self, mutation_service: GraphMutationService) -> None:
+        self.mutation_service = mutation_service
+    @with_graph_telemetry("consume_documentation_updated")
+    async def handle_documentation_updated(self, event: Any) -> None:
+        """Translates DocumentationUpdated events into Document nodes."""
+        if hasattr(event, "file_path"):
+            node_id = f"doc:{getattr(event, 'repository', 'unknown')}:{event.file_path}"
+            name = (event.metadata.get("title") if getattr(event, "metadata", None) else None) or event.file_path
+            doc_type = "markdown"
+        elif getattr(event, "data", None):
+            node_id = f"doc:{event.data.document_url}"
+            name = getattr(event.data, "title", "Untitled Document") or "Untitled Document"
+            doc_type = getattr(event.data, "document_type", "document")
+        else:
+            node_id = f"doc:{getattr(event, 'id', 'unknown')}"
+            name = "Untitled Document"
+            doc_type = "document"
+        self.mutation_service.upsert_node(
+            "Document", {"node_id": node_id, "name": name, "type": doc_type}
+        )
+    @with_graph_telemetry("consume_adr_created")
+    async def handle_adr_created(self, event: ADRCreated) -> None:
+        """Translates ADRCreated events into ADR nodes."""
+        node_id = f"adr:{event.repository}:{event.file_path}"
+        name = event.metadata.get("title", "Untitled ADR") if event.metadata else "Untitled ADR"
+        self.mutation_service.upsert_node(
+            "ADR",
+            {
+                "node_id": node_id,
+                "name": name,
+                "status": event.status or "Unknown",
+                "decision": event.decision or "",
+            },
+        )
+    @with_graph_telemetry("consume_documentation_linked")
+    async def handle_documentation_linked(self, event: DocumentationLinkedEvent) -> None:
+        """Creates DOCUMENTS edges between Document/ADR and structural Nodes."""
+        provenance = {
+            "source_system": event.source,
+            "source_uri": event.data.doc_id,
+            "timestamp": str(event.time),
+            "confidence": event.data.confidence,
+        }
+        self.mutation_service.upsert_edge(
+            event.data.doc_id, event.data.node_id, "DOCUMENTS", provenance
+        )
+</file>
+
+<file path="etl/graph_builder/main.py">
+# etl/graph_builder/main.py
+# This file is responsible for orchestrating the graph building process.
+# It handles the ingestion of events, parsing them, and updating the graph accordingly.
+import asyncio
+import logging
+from backend.core.events.broker import event_broker
+from backend.core.events.consumer import EventConsumer
+from backend.core.logger import setup_logging
+from backend.core.telemetry import setup_telemetry
+from backend.domain.events.ingestion import parse_ingestion_event
+from backend.graph.mutation_service import GraphMutationService
+from backend.infrastructure.db import neo4j_driver
+from etl.graph_builder.routers import register_graph_consumers
+logger = logging.getLogger(__name__)
+async def start_graph_builder() -> None:
+    setup_logging()
+    setup_telemetry(app=None, service_name="codegraph-builder")
+    # 1. Connect to Kafka
+    await event_broker.connect(retries=10, delay=5.0)
+    # 2. Initialize Neo4j Mutation Service
+    mutation_service = GraphMutationService(neo4j_driver)
+    # 3. Initialize the Kafka Consumer
+    consumer = EventConsumer(
+        broker=event_broker,
+        topic="events.knowledge.extracted",
+        group_id="neo4j_graph_builder",
+        parser=parse_ingestion_event,
+    )
+    # 4. Route both Code and Doc events to the single consumer
+    register_graph_consumers(consumer, consumer, mutation_service)
+    logger.info("Graph Builder Consumer started. Listening for events...")
+    await consumer.start()
+if __name__ == "__main__":
+    asyncio.run(start_graph_builder())
+</file>
+
+<file path="scripts/simulate_webhook.py">
+import hashlib
+import hmac
+import json
+import httpx
+SECRET = "super-secret-hmac-key"
+URL = "http://localhost:8000/api/v1/webhooks/github"
+payload = {
+    "ref": "main",
+    "repository": {
+        "id": 999888,
+        "clone_url": "https://github.com/kantkrishna/microservices-demo.git",
+    },
+}
+payload_bytes = json.dumps(payload).encode("utf-8")
+signature = "sha256=" + hmac.new(SECRET.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+headers = {
+    "X-Hub-Signature-256": signature,
+    "X-GitHub-Event": "push",
+    "Content-Type": "application/json",
+}
+response = httpx.post(URL, content=payload_bytes, headers=headers, timeout=15.0)
+print(f"Response: {response.status_code} - {response.text}")
+</file>
+
 <file path=".dockerignore">
 .venv
 __pycache__
@@ -2344,205 +3195,104 @@ This project uses `uv` for dependency management.
 }
 </file>
 
-<file path="backend/core/events/broker.py">
-# backend/core/events/broker.py
-#
-# This file manages the async connection to the Apache Kafka broker.
-import asyncio
-import logging
+<file path="etl/graph_builder/code_consumer.py">
+# etl/graph_builder/code_consumer.py
+# This file consumes AST and Dependency events to build the structural code graph.
 import os
-from aiokafka import AIOKafkaProducer
-from backend.core.config import settings
-logger = logging.getLogger(__name__)
-class BrokerConnectionError(Exception):
-    pass
-class EventBroker:
-    def __init__(self, bootstrap_servers: str) -> None:
-        self.bootstrap_servers = bootstrap_servers
-        self._producer: AIOKafkaProducer | None = None
-        self._connected: bool = False
-    async def connect(self, retries: int = 5, delay: float = 3.0) -> None:
-        bootstrap_servers = (
-            os.getenv("KAFKA_BOOTSTRAP_SERVERS")
-            or os.getenv("KAFKA_URL")
-            or getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+from datetime import UTC, datetime
+from backend.graph.mutation_service import GraphMutationService
+from backend.models.events import DependencyDetected, EntityExtracted, RelationshipExtracted
+from etl.graph_builder.telemetry import with_graph_telemetry
+class CodeGraphConsumer:
+    def __init__(self, mutation_service: GraphMutationService) -> None:
+        self.mutation_service = mutation_service
+    @with_graph_telemetry("consume_entity_extracted")
+    async def handle_entity_extracted(self, event: EntityExtracted) -> None:
+        """Translates EntityExtracted events into File, Class/Function nodes & CONTAINS edges."""
+        file_node_id = f"file:{event.repository_id}:{event.file_path}"
+        file_name = os.path.basename(event.file_path)
+        # 1. Upsert the File Node
+        self.mutation_service.upsert_node(
+            "File",
+            {"node_id": file_node_id, "name": file_name, "repository_id": event.repository_id},
         )
-        for attempt in range(1, retries + 1):
-            try:
-                logger.info(f"Connecting to event broker at {bootstrap_servers} (Attempt {attempt}/{retries})...")
-                self._producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
-                await self._producer.start()
-                self._connected = True
-                logger.info("Successfully connected to event broker.")
-                return
-            except Exception as e:
-                logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
-                # FIX: Explicitly shut down the orphaned producer to prevent memory leaks/warnings
-                if self._producer:
-                    try:
-                        await self._producer.stop()
-                    except Exception:
-                        pass
-                if attempt < retries:
-                    await asyncio.sleep(delay)
-                else:
-                    self._connected = False
-                    logger.error("Failed to connect to event broker after maximum retries.")
-                    raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
-    async def disconnect(self) -> None:
-        if self._producer and self._connected:
-            logger.info("Disconnecting from event broker...")
-            await self._producer.stop()
-            self._connected = False
-            logger.info("Successfully disconnected from event broker.")
-    def is_connected(self) -> bool:
-        return self._connected
-event_broker = EventBroker(bootstrap_servers="localhost:9092")
+        # 2. Upsert the Entity Node (Class or Function)
+        entity_node_id = (
+            f"{event.entity_type.lower()}:{event.repository_id}:{event.file_path}:{event.name}"  # noqa: E501
+        )
+        self.mutation_service.upsert_node(
+            event.entity_type,
+            {"node_id": entity_node_id, "name": event.name, "docstring": event.docstring or ""},
+        )
+        # 3. Create the CONTAINS edge
+        provenance = {
+            "source_system": "ast_parser",
+            "source_uri": event.file_path,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        self.mutation_service.upsert_edge(file_node_id, entity_node_id, "CONTAINS", provenance)
+    @with_graph_telemetry("consume_dependency_detected")
+    async def handle_dependency_detected(self, event: DependencyDetected) -> None:
+        """Translates DependencyDetected events into DEPENDS_ON edges."""
+        file_node_id = f"file:{event.repository_id}:{event.file_path}"
+        package_node_id = f"pkg:{event.package_manager}:{event.package_name}"
+        # Ensure target node exists
+        self.mutation_service.upsert_node(
+            "Service",  # Fallback ontology for external packages
+            {"node_id": package_node_id, "name": event.package_name},
+        )
+        provenance = {
+            "source_system": "manifest_parser",
+            "source_uri": event.file_path,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "version_constraint": event.version_constraint or "",
+        }
+        self.mutation_service.upsert_edge(file_node_id, package_node_id, "DEPENDS_ON", provenance)
+    @with_graph_telemetry("consume_relationship_extracted")
+    async def handle_relationship_extracted(self, event: RelationshipExtracted) -> None:
+        """Translates RelationshipExtracted events into IMPORTS edges."""
+        source_file_id = f"file:{event.repository_id}:{event.source_file}"
+        target_node_id = f"module:{event.target_module}"
+        # Ensure target node exists (using Service as a fallback label for external/other modules)
+        self.mutation_service.upsert_node(
+            "Service",
+            {"node_id": target_node_id, "name": event.target_module},
+        )
+        provenance = {
+            "source_system": event.source,
+            "source_uri": event.source_file,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        self.mutation_service.upsert_edge(
+            source_file_id, target_node_id, event.relationship_type, provenance
+        )
 </file>
 
-<file path="backend/domain/events/ingestion.py">
-# backend/domain/events/ingestion.py
-#
-# This file defines the specific polymorphic payloads for ingestion events
-# like RepositoryIndexed, CommitDetected, ServiceAdded, and DocumentationUpdated.
-from typing import Any, Literal
-from pydantic import BaseModel, TypeAdapter
-from backend.domain.events.base import CodeGraphEvent
-# --- Payloads ---
-class RepositoryIndexedPayload(BaseModel):
-    repository_url: str
-    commit_hash: str
-class CommitDetectedPayload(BaseModel):
-    repository_url: str
-    branch: str
-    commit_hash: str
-    author: str
-class ServiceAddedPayload(BaseModel):
-    service_name: str
-    language: str
-    repository_url: str
-class DocumentationUpdatedPayload(BaseModel):
-    document_url: str
-    document_type: str
-    repository_url: str
-    # Evolved for Epic 5 to hold the extracted Markdown and headers
-    content: str | None = None
-    title: str | None = None
-class DocumentationLinkedPayload(BaseModel):
-    doc_id: str
-    node_id: str
-    entity_name: str
-    confidence: float
-# backend/domain/events/ingestion.py
-#
-# This file defines the specific ingestion events used in Epic 4 and Epic 5.
-# (Note: Keep your existing Epic 3 models like RepositoryIndexedEvent untouched above these)
-class FileDiscovered(CodeGraphEvent[Any]):
-    type: str = "FileDiscovered"
-    repository: str
-    file_path: str
-    content: str
-    data: Any | None = None  # Override required base field for this specific event
-class DocumentationUpdated(CodeGraphEvent[Any]):
-    type: str = "DocumentationUpdated"
-    repository: str
-    file_path: str
-    metadata: dict[str, Any]
-    content: str
-    data: Any | None = None  # Override required base field for this specific event
-class ADRCreated(CodeGraphEvent[Any]):
-    type: str = "ADRCreated"
-    repository: str
-    file_path: str
-    metadata: dict[str, Any]
-    content: str
-    status: str | None = None
-    decision: str | None = None
-    data: Any | None = None  # Override required base field for this specific event
-# --- Events ---
-class RepositoryIndexedEvent(CodeGraphEvent[RepositoryIndexedPayload]):
-    type: Literal["RepositoryIndexed"] = "RepositoryIndexed"
-class CommitDetectedEvent(CodeGraphEvent[CommitDetectedPayload]):
-    type: Literal["CommitDetected"] = "CommitDetected"
-class ServiceAddedEvent(CodeGraphEvent[ServiceAddedPayload]):
-    type: Literal["ServiceAdded"] = "ServiceAdded"
-class DocumentationUpdatedEvent(CodeGraphEvent[DocumentationUpdatedPayload]):
-    type: Literal["DocumentationUpdated"] = "DocumentationUpdated"
-class DocumentationLinkedEvent(CodeGraphEvent[DocumentationLinkedPayload]):
-    type: Literal["DocumentationLinked"] = "DocumentationLinked"
-# --- Polymorphic Router ---
-IngestionEvent = (
-    RepositoryIndexedEvent | CommitDetectedEvent | ServiceAddedEvent | DocumentationUpdatedEvent
-)
-# TypeAdapter configured with a discriminator allows mapping arbitrary dictionaries
-# to the correct specific Event class based on the 'type' field.
-_event_adapter: TypeAdapter[IngestionEvent] = TypeAdapter(IngestionEvent)
-def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
-    """
-    Parses a raw dictionary into the appropriate specific CodeGraphEvent subtype.
-    Raises pydantic.ValidationError if invalid.
-    """
-    return _event_adapter.validate_python(payload)
-</file>
-
-<file path="backend/services/parsers/factory.py">
-# backend/services/parsers/factory.py
-# Routes discovered files to the correct AST or Manifest parser and publishes events.
-import logging
-import os
-from typing import Any
-from backend.core.events.broker import event_broker
-from backend.core.events.publisher import EventPublisher
-from backend.models.events import (
-    FileDiscovered,
-)
-from backend.services.parsers.manifest_parser import ManifestParser
-from backend.services.parsers.python_parser import PythonParser
-logger = logging.getLogger(__name__)
-# Initialize parsers globally to avoid reloading grammars
-_PY_PARSER = PythonParser()
-_MANIFEST_PARSER = ManifestParser()
-# Initialize the Event Bus connection using Dependency Injection with Kafka/Redis broker URL
-_EVENT_BUS = EventPublisher(event_broker)
-async def publish_event(event: Any) -> None:
-    """
-    Serializes the Pydantic event and pushes it to the Epic 3 Event Bus.
-    """
-    # Determine the correct topic based on the event type
-    topic = "events.knowledge.extracted"
-    # Pass the raw Pydantic event object, NOT serialized bytes.
-    # EventPublisher.publish() handles the model_dump_json() serialization securely.
-    await _EVENT_BUS.publish(topic, event)
-async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
-    """
-    Reads the file from disk, parses its AST or Manifest, and emits structural events.
-    """
-    full_path = os.path.join(clone_dir, event.file_path)
-    if not os.path.exists(full_path):
-        return
-    try:
-        # Move the open() inside the try block to safely handle read errors
-        with open(full_path, "rb") as f:
-            source_code = f.read()
-        # 1. Process Package Manifests (US-4.4)
-        if event.file_path.endswith(("requirements.txt", "package.json")):
-            deps = _MANIFEST_PARSER.parse_manifest(
-                source_code, event.repository_id, event.file_path
-            )
-            for dep in deps:
-                await publish_event(dep)
-        # 2. Process Python ASTs (US-4.3 & US-4.4)
-        elif event.language in ("py", "python"):
-            entities, relationships = _PY_PARSER.parse(
-                source_code, event.repository_id, event.file_path
-            )
-            for ent in entities:
-                await publish_event(ent)
-            for rel in relationships:
-                await publish_event(rel)
-    except Exception as e:
-        # Log the error and continue processing other files
-        logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)
+<file path="etl/graph_builder/routers.py">
+# etl/graph_builder/routers.py
+# Registers the Graph Builder consumers with the Event Bus (Kafka/Redis).
+from backend.core.events.consumer import EventConsumer
+from backend.graph.mutation_service import GraphMutationService
+from etl.graph_builder.code_consumer import CodeGraphConsumer
+from etl.graph_builder.doc_consumer import DocGraphConsumer
+def register_graph_consumers(
+    code_consumer: EventConsumer,
+    doc_consumer: EventConsumer,
+    mutation_service: GraphMutationService,
+) -> None:
+    """Maps Kafka event types to the Graph Consumer methods."""
+    code_graph_handler = CodeGraphConsumer(mutation_service)
+    doc_graph_handler = DocGraphConsumer(mutation_service)
+    # Map Code/AST Events (US-6.3)
+    code_consumer.register("EntityExtracted", code_graph_handler.handle_entity_extracted)
+    code_consumer.register("DependencyDetected", code_graph_handler.handle_dependency_detected)
+    code_consumer.register(
+        "RelationshipExtracted", code_graph_handler.handle_relationship_extracted
+    )
+    # Map Documentation Events (US-6.4)
+    doc_consumer.register("DocumentationUpdated", doc_graph_handler.handle_documentation_updated)
+    doc_consumer.register("ADRCreated", doc_graph_handler.handle_adr_created)
+    doc_consumer.register("DocumentationLinked", doc_graph_handler.handle_documentation_linked)
 </file>
 
 <file path="Dockerfile">
@@ -2582,101 +3332,89 @@ EXPOSE 8000
 CMD ["uv", "run", "uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 </file>
 
-<file path="backend/core/telemetry.py">
-# backend/core/telemetry.py
-# This file configures OpenTelemetry for distributed tracing across the platform.
-import os
+<file path="backend/services/parsers/factory.py">
+# backend/services/parsers/factory.py
+# Routes discovered files to the correct AST or Manifest parser and publishes events.
 import logging
+import os
+import uuid
 from typing import Any
-from fastapi import FastAPI
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
-logger = logging.getLogger(__name__)
-def setup_telemetry(
-    app: FastAPI | None = None, service_name: str = "codegraph-api", exporter: SpanExporter | None = None
-) -> None:
-    try:
-        # 1. Create Resource and Provider unconditionally
-        resource = Resource(attributes={SERVICE_NAME: service_name})
-        sdk_provider = TracerProvider(resource=resource)
-        # 2. Add Exporter
-        if exporter is None:
-            endpoint = os.getenv("OTLP_ENDPOINT", "http://jaeger:4318/v1/traces")
-            otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
-            # Flush every 1000ms instead of 5000ms for rapid local observability
-            processor: Any = BatchSpanProcessor(otlp_exporter, schedule_delay_millis=1000)
-        else:
-            processor = SimpleSpanProcessor(exporter)
-        sdk_provider.add_span_processor(processor)
-        trace.set_tracer_provider(sdk_provider)
-        # 3. Instrument FastAPI explicitly if provided
-        if app is not None:
-            # FIX: Tightly isolate the teardown check so it never aborts the setup
-            try:
-                FastAPIInstrumentor().uninstrument_app(app)
-            except Exception:
-                pass
-            FastAPIInstrumentor().instrument_app(app)
-        logger.info(f"OpenTelemetry successfully initialized for {service_name}")
-    except Exception as e:
-        logger.error(f"Failed to initialize OpenTelemetry: {e}", exc_info=True)
-def instrument_db_engine(engine: Any) -> None:
-    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
-</file>
-
-<file path="backend/worker.py">
-# backend/worker.py
-# This file configures the ARQ (Async Redis Queue) worker for background processing.
-from typing import Any
-from arq.connections import RedisSettings
-from opentelemetry import trace
-from backend.core.config import settings
 from backend.core.events.broker import event_broker
-from backend.core.logger import setup_logging
-from backend.core.telemetry import setup_telemetry
-from backend.services.git_service import clone_and_process_repository
-tracer = trace.get_tracer(__name__)
-async def clone_repository_task(
-    ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
-) -> None:
-    """ARQ Task wrapper for repository cloning."""
-    # Get tracer inside the task to avoid disconnected ProxyTracers
-    tracer = trace.get_tracer(__name__)
-    # Create a manual root span so Jaeger can track the ingestion pipeline
-    with tracer.start_as_current_span("clone_repository_task") as span:
-        span.set_attribute("repository.url", clone_url)
-        await clone_and_process_repository(clone_url, repo_id, branch)
-    # Force flush to Jaeger before the async task yields context
-    provider = trace.get_tracer_provider()
-    if hasattr(provider, "force_flush"):
-        provider.force_flush()
-# Define the startup hook
-async def startup(ctx: dict[str, Any]) -> None:
-    setup_logging()
-    # Initialize OpenTelemetry for the worker process
-    setup_telemetry(app=None, service_name="codegraph-worker")
-    # Initialize the Kafka producer for the worker process
-    await event_broker.connect()
-# Ensure clean disconnection on worker termination
-async def shutdown(ctx: dict[str, Any]) -> None:
-    await event_broker.disconnect()
-class WorkerSettings:
-    """Configuration for the ARQ worker process."""
-    functions = [clone_repository_task]
-    # redis_settings = settings.REDIS_URL
-    # Parse the URL string into an arq RedisSettings object
-    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    max_jobs = 10
-    job_timeout = 600  # 10 minutes max for cloning massive repos
-    on_startup = startup
-    on_shutdown = shutdown
-# To run the worker:
-# `arq backend.worker.WorkerSettings`
+from backend.core.events.publisher import EventPublisher
+from backend.domain.events.ingestion import ADRCreated, DocumentationUpdated
+from backend.models.events import FileDiscovered
+from backend.services.parsers.manifest_parser import ManifestParser
+from backend.services.parsers.python_parser import PythonParser
+from etl.connectors.markdown.adr_parser import extract_decision, extract_status, is_adr
+from etl.connectors.markdown.parser import normalize_path, parse_markdown, strip_invalid_chars
+logger = logging.getLogger(__name__)
+# Initialize parsers globally to avoid reloading grammars
+_PY_PARSER = PythonParser()
+_MANIFEST_PARSER = ManifestParser()
+# Initialize the Event Bus connection
+_EVENT_BUS = EventPublisher(event_broker)
+async def publish_event(event: Any) -> None:
+    """Serializes the Pydantic event and pushes it to the Kafka broker."""
+    topic = "events.knowledge.extracted"
+    await _EVENT_BUS.publish(topic, event)
+async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None:
+    """Reads the file from disk, parses its AST, Manifest, or ADR/Markdown, and emits events."""
+    full_path = os.path.join(clone_dir, event.file_path)
+    if not os.path.exists(full_path):
+        return
+    try:
+        with open(full_path, "rb") as f:
+            source_code = f.read()
+        # 1. Process Package Manifests (US-4.4)
+        if event.file_path.endswith(("requirements.txt", "package.json")):
+            deps = _MANIFEST_PARSER.parse_manifest(
+                source_code, event.repository_id, event.file_path
+            )
+            for dep in deps:
+                await publish_event(dep)
+        # 2. Process Python ASTs (US-4.3 & US-4.4)
+        elif event.language in ("py", "python"):
+            entities, relationships = _PY_PARSER.parse(
+                source_code, event.repository_id, event.file_path
+            )
+            for ent in entities:
+                await publish_event(ent)
+            for rel in relationships:
+                await publish_event(rel)
+        # 3. Process Markdown & ADRs (US-5.1 & US-5.2)
+        elif event.language in ("md", "markdown") or event.file_path.endswith(".md"):
+            text_content = source_code.decode("utf-8", errors="ignore")
+            clean_path = normalize_path(event.file_path)
+            clean_content = strip_invalid_chars(text_content)
+            metadata, body = parse_markdown(clean_content)
+            event_id = str(uuid.uuid4())
+            repo_str = str(event.repository_id)
+            if is_adr(clean_path):
+                status = extract_status(body)
+                decision = extract_decision(body)
+                adr_event = ADRCreated(
+                    id=event_id,
+                    source="markdown_parser",
+                    repository=repo_str,
+                    file_path=clean_path,
+                    metadata=metadata,
+                    content=body,
+                    status=status,
+                    decision=decision,
+                )
+                await publish_event(adr_event)
+            else:
+                doc_event = DocumentationUpdated(
+                    id=event_id,
+                    source="markdown_parser",
+                    repository=repo_str,
+                    file_path=clean_path,
+                    metadata=metadata,
+                    content=body,
+                )
+                await publish_event(doc_event)
+    except Exception as e:
+        logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)
 </file>
 
 <file path=".gitignore">
@@ -2966,6 +3704,166 @@ clean-ps:
 	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
 </file>
 
+<file path="backend/core/events/broker.py">
+# backend/core/events/broker.py
+# This file manages the async connection to the Apache Kafka broker.
+import asyncio
+import logging
+import os
+from aiokafka import AIOKafkaProducer
+from backend.core.config import settings
+logger = logging.getLogger(__name__)
+class BrokerConnectionError(Exception):
+    """Raised when the broker fails to connect."""
+    pass
+class EventBroker:
+    """
+    Manages the lifecycle and connection state of the event broker (Kafka).
+    To be injected into FastAPI lifespan events and Health check routers.
+    """
+    def __init__(self, bootstrap_servers: str) -> None:
+        self.bootstrap_servers = bootstrap_servers
+        self._producer: AIOKafkaProducer | None = None
+        self._connected: bool = False
+    async def connect(self, retries: int = 5, delay: float = 3.0) -> None:
+        """Initialize the Kafka producer and connect to the broker with retries."""
+        resolved_servers = (
+            os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+            or os.getenv("KAFKA_URL")
+            or str(getattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
+            or "localhost:9092"
+        )
+        self.bootstrap_servers = str(resolved_servers)
+        for attempt in range(1, retries + 1):
+            try:
+                logger.info(
+                    f"Connecting to event broker at {self.bootstrap_servers} (Attempt {attempt}/{retries})..."  # noqa: E501
+                )
+                self._producer = AIOKafkaProducer(bootstrap_servers=self.bootstrap_servers)
+                await self._producer.start()
+                self._connected = True
+                logger.info("Successfully connected to event broker.")
+                return
+            except Exception as e:
+                logger.warning(f"Kafka connection attempt {attempt} failed: {e}")
+                if self._producer:
+                    try:
+                        await self._producer.stop()
+                    except Exception:
+                        pass
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+                else:
+                    self._connected = False
+                    logger.error("Failed to connect to event broker after maximum retries.")
+                    raise BrokerConnectionError(f"Kafka connection failed: {str(e)}") from e
+    async def disconnect(self) -> None:
+        if self._producer and self._connected:
+            logger.info("Disconnecting from event broker...")
+            await self._producer.stop()
+            self._connected = False
+            logger.info("Successfully disconnected from event broker.")
+    def is_connected(self) -> bool:
+        return self._connected
+event_broker = EventBroker(bootstrap_servers="localhost:9092")
+</file>
+
+<file path="backend/domain/events/ingestion.py">
+# backend/domain/events/ingestion.py
+#
+# This file defines the specific polymorphic payloads for ingestion events
+# like RepositoryIndexed, CommitDetected, ServiceAdded, and DocumentationUpdated.
+from typing import Any, Literal
+from pydantic import BaseModel, TypeAdapter
+from backend.domain.events.base import CodeGraphEvent
+from backend.models.events import (
+    DependencyDetected,
+    EntityExtracted,
+    RelationshipExtracted,
+)
+# --- Payloads ---
+class RepositoryIndexedPayload(BaseModel):
+    repository_url: str
+    commit_hash: str
+class CommitDetectedPayload(BaseModel):
+    repository_url: str
+    branch: str
+    commit_hash: str
+    author: str
+class ServiceAddedPayload(BaseModel):
+    service_name: str
+    language: str
+    repository_url: str
+class DocumentationUpdatedPayload(BaseModel):
+    document_url: str
+    document_type: str
+    repository_url: str
+    # Evolved for Epic 5 to hold the extracted Markdown and headers
+    content: str | None = None
+    title: str | None = None
+class DocumentationLinkedPayload(BaseModel):
+    doc_id: str
+    node_id: str
+    entity_name: str
+    confidence: float
+class FileDiscovered(CodeGraphEvent[Any]):
+    type: str = "FileDiscovered"
+    repository: str
+    file_path: str
+    content: str
+    data: Any | None = None  # Override required base field for this specific event
+class DocumentationUpdated(CodeGraphEvent[Any]):
+    type: str = "DocumentationUpdated"
+    repository: str
+    file_path: str
+    metadata: dict[str, Any]
+    content: str
+    data: Any | None = None  # Override required base field for this specific event
+class ADRCreated(CodeGraphEvent[Any]):
+    type: str = "ADRCreated"
+    repository: str
+    file_path: str
+    metadata: dict[str, Any]
+    content: str
+    status: str | None = None
+    decision: str | None = None
+    data: Any | None = None  # Override required base field for this specific event
+# --- Events ---
+class RepositoryIndexedEvent(CodeGraphEvent[RepositoryIndexedPayload]):
+    type: Literal["RepositoryIndexed"] = "RepositoryIndexed"
+class CommitDetectedEvent(CodeGraphEvent[CommitDetectedPayload]):
+    type: Literal["CommitDetected"] = "CommitDetected"
+class ServiceAddedEvent(CodeGraphEvent[ServiceAddedPayload]):
+    type: Literal["ServiceAdded"] = "ServiceAdded"
+class DocumentationUpdatedEvent(CodeGraphEvent[DocumentationUpdatedPayload]):
+    type: Literal["DocumentationUpdated"] = "DocumentationUpdated"
+class DocumentationLinkedEvent(CodeGraphEvent[DocumentationLinkedPayload]):
+    type: Literal["DocumentationLinked"] = "DocumentationLinked"
+# --- Polymorphic Router ---
+IngestionEvent = (
+    RepositoryIndexedEvent
+    | CommitDetectedEvent
+    | ServiceAddedEvent
+    | DocumentationUpdatedEvent
+    | DocumentationLinkedEvent
+    | FileDiscovered
+    | DocumentationUpdated
+    | ADRCreated
+    | EntityExtracted
+    | RelationshipExtracted
+    | DependencyDetected
+)
+# TypeAdapter configured with a discriminator allows mapping arbitrary dictionaries
+# to the correct specific Event class based on the 'type' field.
+_event_adapter: TypeAdapter[IngestionEvent] = TypeAdapter(IngestionEvent)
+def parse_ingestion_event(payload: dict[str, Any]) -> IngestionEvent:
+    """
+    Parses a raw dictionary into the appropriate specific CodeGraphEvent subtype.
+    Raises pydantic.ValidationError if invalid.
+    """
+    return _event_adapter.validate_python(payload)
+</file>
+
 <file path="backend/models/events.py">
 # backend/models/events.py
 # This file defines the strictly typed Pydantic models for the Event-Driven Architecture.
@@ -3014,47 +3912,98 @@ class DependencyDetected(CodeGraphEvent[Any]):
     data: Any = None
 </file>
 
-<file path="backend/main.py">
-# backend/main.py
-# This file defines the main FastAPI application instance.
-import contextlib
-from collections.abc import AsyncIterator
-from arq import create_pool
-from arq.connections import RedisSettings
+<file path="backend/core/telemetry.py">
+# backend/core/telemetry.py
+# This file configures OpenTelemetry for distributed tracing across the platform.
+import logging
+import os
+from typing import Any
 from fastapi import FastAPI
-from backend.api.middleware.logging_middleware import LoggingMiddleware
-from backend.api.middleware.metrics_middleware import MetricsMiddleware
-# Import the health router
-from backend.api.routers import health, system, webhooks
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+logger = logging.getLogger(__name__)
+def setup_telemetry(
+    app: FastAPI | None = None,
+    service_name: str = "codegraph-api",
+    exporter: SpanExporter | None = None,
+) -> None:
+    try:
+        # 1. Create Resource and Provider unconditionally
+        resource = Resource(attributes={SERVICE_NAME: service_name})
+        sdk_provider = TracerProvider(resource=resource)
+        # 2. Add Exporter
+        if exporter is None:
+            endpoint = os.getenv("OTLP_ENDPOINT", "http://jaeger:4318/v1/traces")
+            otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
+            # Flush every 1000ms instead of 5000ms for rapid local observability
+            processor: Any = BatchSpanProcessor(otlp_exporter, schedule_delay_millis=1000)
+        else:
+            processor = SimpleSpanProcessor(exporter)
+        sdk_provider.add_span_processor(processor)
+        trace.set_tracer_provider(sdk_provider)
+        # 3. Instrument FastAPI explicitly if provided
+        if app is not None:
+            FastAPIInstrumentor().instrument_app(app, tracer_provider=sdk_provider)
+        logger.info(f"OpenTelemetry successfully initialized for {service_name}")
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenTelemetry: {e}", exc_info=True)
+def instrument_db_engine(engine: Any) -> None:
+    SQLAlchemyInstrumentor().instrument(engine=engine, enable_commenter=True, commenter_options={})
+</file>
+
+<file path="backend/worker.py">
+# backend/worker.py
+# This file configures the ARQ (Async Redis Queue) worker for background processing.
+from typing import Any
+from arq.connections import RedisSettings
+from opentelemetry import trace
 from backend.core.config import settings
+from backend.core.events.broker import event_broker
 from backend.core.logger import setup_logging
 from backend.core.telemetry import setup_telemetry
-# Initialize structured logging before app startup
-setup_logging()
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup: Initialize ARQ Redis pool and attach to app state
-    app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
-    yield
-    # Shutdown: Close Redis connection
-    if hasattr(app.state, "redis"):
-        await app.state.redis.close()
-app = FastAPI(
-    title="CodeGraph Enterprise Platform",
-    description="Enterprise Developer Intelligence Platform API",
-    version="0.1.0",
-    lifespan=lifespan,
-)
-# Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
-app.add_middleware(MetricsMiddleware)
-app.add_middleware(LoggingMiddleware)
-# Register Routers
-app.include_router(system.router)
-app.include_router(webhooks.router)
-# Register the database-checking health router
-app.include_router(health.router)
-# Initialize OpenTelemetry for Distributed Tracing
-setup_telemetry(app)
+from backend.services.git_service import clone_and_process_repository
+tracer = trace.get_tracer(__name__)
+async def clone_repository_task(
+    ctx: dict[str, Any], clone_url: str, repo_id: int, branch: str
+) -> None:
+    """ARQ Task wrapper for repository cloning."""
+    # Get tracer inside the task to avoid disconnected ProxyTracers
+    tracer = trace.get_tracer(__name__)
+    # Create a manual root span so Jaeger can track the ingestion pipeline
+    with tracer.start_as_current_span("clone_repository_task") as span:
+        span.set_attribute("repository.url", clone_url)
+        await clone_and_process_repository(clone_url, repo_id, branch)
+    # Force flush to Jaeger before the async task yields context
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, "force_flush"):
+        provider.force_flush()
+# Define the startup hook
+async def startup(ctx: dict[str, Any]) -> None:
+    setup_logging()
+    # Initialize OpenTelemetry for the worker process
+    setup_telemetry(app=None, service_name="codegraph-worker")
+    # Initialize the Kafka producer for the worker process
+    await event_broker.connect(retries=10, delay=5.0)
+# Ensure clean disconnection on worker termination
+async def shutdown(ctx: dict[str, Any]) -> None:
+    await event_broker.disconnect()
+class WorkerSettings:
+    """Configuration for the ARQ worker process."""
+    functions = [clone_repository_task]
+    # redis_settings = settings.REDIS_URL
+    # Parse the URL string into an arq RedisSettings object
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    max_jobs = 10
+    job_timeout = 600  # 10 minutes max for cloning massive repos
+    on_startup = startup
+    on_shutdown = shutdown
+# To run the worker:
+# `arq backend.worker.WorkerSettings`
 </file>
 
 <file path="docs/epics/requirements.md">
@@ -3863,6 +4812,49 @@ Instead of boiling the ocean and indexing an entire enterprise, our MVP will sim
   * *Rationale:* Releasing the Python/TS SDKs for developers, alongside platform usage analytics dashboards.
 </file>
 
+<file path="backend/main.py">
+# backend/main.py
+# This file defines the main FastAPI application instance.
+import contextlib
+from collections.abc import AsyncIterator
+from arq import create_pool
+from arq.connections import RedisSettings
+from fastapi import FastAPI
+from backend.api.middleware.logging_middleware import LoggingMiddleware
+from backend.api.middleware.metrics_middleware import MetricsMiddleware
+# Import the health router
+from backend.api.routers import health, system, webhooks
+from backend.core.config import settings
+from backend.core.logger import setup_logging
+from backend.core.telemetry import setup_telemetry
+# Initialize structured logging before app startup
+setup_logging()
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Startup: Initialize ARQ Redis pool and attach to app state
+    app.state.redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    yield
+    # Shutdown: Close Redis connection
+    if hasattr(app.state, "redis"):
+        await app.state.redis.close()
+app = FastAPI(
+    title="CodeGraph Enterprise Platform",
+    description="Enterprise Developer Intelligence Platform API",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+# Register Middlewares (Order matters: Logging wraps Metrics wraps Request)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(LoggingMiddleware)
+# Register Routers
+app.include_router(system.router)
+app.include_router(webhooks.router)
+# Register the database-checking health router
+app.include_router(health.router)
+# Initialize OpenTelemetry for Distributed Tracing
+setup_telemetry(app)
+</file>
+
 <file path="docker-compose.yml">
 # docker-compose.yml
 # This docker-compose file defines a multi-container application with three services:
@@ -3940,6 +4932,9 @@ services:
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+      # Enable local consumer loops
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
     volumes:
       - ./.docker-data/kafka:/tmp/kafka-logs
   kafka-ui:
@@ -3956,10 +4951,31 @@ services:
       - kafka
   redis:
     image: redis:7-alpine
+    container_name: codegraph-redis
     ports:
       - "6379:6379"
+  graph-builder:
+    build: .
+    container_name: codegraph-builder
+    restart: unless-stopped
+    command: ["uv", "run", "python", "-m", "etl.graph_builder.main"]
+    env_file:
+      - .env
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - KAFKA_URL=kafka:29092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+    depends_on:
+      - kafka
+      - neo4j
+    volumes:
+      - .:/app
+      - /app/.venv
   api:
     build: .
+    container_name: codegraph-api
+    restart: unless-stopped
     # command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     command: ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
@@ -3985,6 +5001,8 @@ services:
       - /app/.venv
   worker:
     build: .
+    container_name: codegraph-worker
+    restart: unless-stopped
     command: ["uv", "run", "arq", "backend.worker.WorkerSettings"]
     env_file:
       - .env

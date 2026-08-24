@@ -188,7 +188,9 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
 #### Test ID: FT-6.3 (Epic 6: Knowledge Graph Visualization & Provenance)
 
 * **Objective**: Validate that the ingested repository data has been successfully translated into interconnected graph nodes (AST parsing, dependencies) and strictly adheres to ADR-026 Source Provenance tracking.
-* **Preconditions**: FT-4.0 has passed, the `codegraph-builder` consumer is actively running, and the Kafka `events.knowledge.extracted` topic has been drained into Neo4j.
+* **Preconditions**: 
+  - FT-4.0 has passed, the `codegraph-builder` consumer is actively running, and the Kafka `events.knowledge.extracted` topic has been drained into Neo4j.
+  - `simulate_webhook.py` configured to target `https://github.com/kantkrishna/microservices-demo.git` and executed by running `uv run python scripts/simulate_webhook.py` to simulate webhook events.
 * **Exact Steps**:
   1. Open a browser and navigate to `http://localhost:7474` (Neo4j Browser UI).
   2. Authenticate using the `.env` credentials (`neo4j` / `codegraph_secret`).
@@ -234,6 +236,33 @@ To validate Repository Ingestion (Epic 4), we need a deterministic test payload 
   
 * **PASS**: The Neo4j UI successfully renders interactive graphs and tables for all three queries, confirming that raw source code has been translated into an accurate, auditable, and queryable Knowledge Graph.
 * **Business Value Demonstrated**: Proves the platform can automatically discover hidden architectural context (defeating knowledge silos), map internal/external dependencies for blast radius calculation, and maintain strict data governance via timestamped provenance.
+
+#### Test ID: FT-6.4 (Epic 6: Documentation Event Consumer & ADR Mapping)
+
+* **Objective**: Validate that external/in-repository Markdown documentation and Architecture Decision Records (ADRs) are successfully parsed, structured, and mapped to the knowledge graph via the `DocGraphConsumer`.
+* **Preconditions**: 
+  - `simulate_webhook.py` configured to target `https://github.com/kantkrishna/microservices-demo.git` and executed by running `uv run python scripts/simulate_webhook.py` to simulate webhook events.
+  - `docs/adr/` directory containing MADR-compliant markdown files present in the target repository.
+  - `codegraph-builder` container running and healthy.
+
+* **Exact Steps & Verification Commands (Neo4j UI)**:
+  1. Navigate to `http://localhost:7474` and log in.
+  2. Run the ADR validation query:
+     ```cypher
+     MATCH (a:ADR) RETURN a.name AS Title, a.status AS Status, a.node_id AS ID;
+     ```
+  3. Run the Documentation Linkage verification query:
+     ```cypher
+     MATCH (doc:ADR)-[r:DOCUMENTS]->(target)
+     RETURN doc.name AS Document, type(r) AS Relationship, target.name AS TargetService;
+     ```
+
+* **Expected Output**:
+  - Query 1 returns a list of all 4 mock ADRs with their extracted statuses (`Accepted`, `Proposed`) correctly populated.
+  - Query 2 displays active `DOCUMENTS` relationship edges bridging human-readable architectural intent directly to technical code components.
+
+* **PASS**: Neo4j successfully lists parsed ADR entities with proper metadata and provenance, proving that tribal/architectural knowledge is programmatically integrated alongside deterministic code structures.
+* **FAIL**: Zero records returned, indicating a break in the Kafka `events.ingestion.docs` topic or an unhandled schema payload in the `DocGraphConsumer`.
 
 ---
 

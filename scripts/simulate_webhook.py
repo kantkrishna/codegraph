@@ -8,7 +8,10 @@ SECRET = "super-secret-hmac-key"
 URL = "http://localhost:8000/api/v1/webhooks/github"
 payload = {
     "ref": "main",
-    "repository": {"id": 999888, "clone_url": "https://github.com/pallets/click.git"},
+    "repository": {
+        "id": 999888,
+        "clone_url": "https://github.com/kantkrishna/microservices-demo.git",
+    },
 }
 payload_bytes = json.dumps(payload).encode("utf-8")
 signature = "sha256=" + hmac.new(SECRET.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
