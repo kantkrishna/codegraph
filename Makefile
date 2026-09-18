@@ -55,3 +55,12 @@ clean:
 
 clean-ps:
 	Get-ChildItem -Path . -Include "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache" -Recurse -Directory -Force | Remove-Item -Recurse -Force
+
+apply_neo4j_constraints:
+	uv run python scripts/apply_neo4j_constraints.py
+
+validate_neo4j_schema:
+	uv run python scripts/validate_neo4j_schema.py
+
+simulate_webhook:
+	uv run python scripts/simulate_webhook.py

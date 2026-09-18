@@ -40,6 +40,7 @@ class GraphMutationService:
             "DOCUMENTS",
             "DEPENDS_ON",
             "IMPORTS",  # V2
+            "BELONGS_TO",
         }
     )
 

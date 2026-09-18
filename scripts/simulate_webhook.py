@@ -1,3 +1,9 @@
+# scripts/simulate_webhook.py
+
+# This script simulates a GitHub webhook event for testing purposes.
+# It sends a POST request to the specified webhook URL with a sample payload and HMAC signature.
+# The script uses the `httpx` library to send the request and prints the response status code and text.
+
 import hashlib
 import hmac
 import json

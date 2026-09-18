@@ -41,19 +41,19 @@ async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None
         with open(full_path, "rb") as f:
             source_code = f.read()
 
-        # 1. Process Package Manifests (US-4.4)
-        if event.file_path.endswith(("requirements.txt", "package.json")):
-            deps = _MANIFEST_PARSER.parse_manifest(
-                source_code, event.repository_id, event.file_path
-            )
+		# 1. Process Package Manifests (US-4.4)
+        # FIX 1: Add .yaml and .yml to the Manifest Parser route
+        if event.file_path.endswith(("requirements.txt", "package.json", ".yaml", ".yml")):
+            deps = _MANIFEST_PARSER.parse_manifest(source_code, event.repository_id, event.file_path)
             for dep in deps:
                 await publish_event(dep)
 
         # 2. Process Python ASTs (US-4.3 & US-4.4)
+        # FIX 2: Block auto-generated Protobuf files from AST Parsing
         elif event.language in ("py", "python"):
-            entities, relationships = _PY_PARSER.parse(
-                source_code, event.repository_id, event.file_path
-            )
+            if "pb2" in event.file_path or "grpc" in event.file_path:
+                return
+            entities, relationships = _PY_PARSER.parse(source_code, event.repository_id, event.file_path)
             for ent in entities:
                 await publish_event(ent)
             for rel in relationships:
@@ -67,31 +67,21 @@ async def process_discovered_file(event: FileDiscovered, clone_dir: str) -> None
             metadata, body = parse_markdown(clean_content)
             event_id = str(uuid.uuid4())
             repo_str = str(event.repository_id)
-
+            
             if is_adr(clean_path):
                 status = extract_status(body)
                 decision = extract_decision(body)
                 adr_event = ADRCreated(
-                    id=event_id,
-                    source="markdown_parser",
-                    repository=repo_str,
-                    file_path=clean_path,
-                    metadata=metadata,
-                    content=body,
-                    status=status,
-                    decision=decision,
+                    id=event_id, source="markdown_parser", repository=repo_str,
+                    file_path=clean_path, metadata=metadata, content=body,
+                    status=status, decision=decision
                 )
                 await publish_event(adr_event)
             else:
                 doc_event = DocumentationUpdated(
-                    id=event_id,
-                    source="markdown_parser",
-                    repository=repo_str,
-                    file_path=clean_path,
-                    metadata=metadata,
-                    content=body,
+                    id=event_id, source="markdown_parser", repository=repo_str,
+                    file_path=clean_path, metadata=metadata, content=body
                 )
                 await publish_event(doc_event)
-
     except Exception as e:
         logger.error(f"Failed to process file {event.file_path}: {str(e)}", exc_info=True)

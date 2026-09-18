@@ -10,8 +10,9 @@ import pathspec
 
 # Standard enterprise ignore patterns
 GLOBAL_IGNORES = [".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build"]
-VALID_EXTENSIONS = {".py", ".ts", ".js", ".java", ".go", ".md"}
 
+# FIX: Added .txt and .json to allow requirements.txt and package.json to be parsed
+VALID_EXTENSIONS = {".py", ".ts", ".js", ".java", ".go", ".md", ".txt", ".json", ".yaml", ".yml"}
 
 def get_gitignore_spec(repo_path: str) -> pathspec.PathSpec[Any]:
     """Parses the .gitignore file if it exists."""
@@ -22,23 +23,20 @@ def get_gitignore_spec(repo_path: str) -> pathspec.PathSpec[Any]:
             patterns.extend(f.read().splitlines())
     return pathspec.PathSpec.from_lines("gitignore", patterns)
 
-
 def traverse_repository(repo_path: str) -> Iterator[str]:
-    """Walks the directory yielding valid source files respecting ignores."""
     spec = get_gitignore_spec(repo_path)
-
     for root, dirs, files in os.walk(repo_path):
-        # Relativize path for pathspec evaluation
         rel_root = os.path.relpath(root, repo_path)
         if rel_root == ".":
             rel_root = ""
-
-        # Modify dirs in-place to prune ignored directories (stops os.walk from descending)
         dirs[:] = [d for d in dirs if not spec.match_file(os.path.join(rel_root, d))]
-
+        
         for file in files:
+            # FIX: Skip auto-generated Protobuf and gRPC stubs
+            if "pb2" in file or "grpc" in file:
+                continue
+                
             rel_file_path = os.path.join(rel_root, file)
             _, ext = os.path.splitext(file)
-
             if ext in VALID_EXTENSIONS and not spec.match_file(rel_file_path):
                 yield os.path.join(repo_path, rel_file_path)
